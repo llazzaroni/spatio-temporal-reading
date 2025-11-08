@@ -1,3 +1,5 @@
+import pandas as pd
+
 # Project specific imports
 from exploration.statistics import saccade_vs_chars, duration_vs_chars, duration_distributions, empirical_regression_probability_vs_chars
 from exploration.visualize import plot_durations_vs_chars, plot_saccade_vs_chars, box_plots_duration_distributions, plot_distributions, plot_empirical_regression_prob_vs_chars, plot_empirical_regression_prob_vs_durs, plot_empirical_regression_prob_vs_durs_pre, plot_jump_vs_surprisal_rank
