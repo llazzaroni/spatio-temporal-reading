@@ -2,14 +2,14 @@
 
 A Python project for ***spatio-temporal reading analysis*** — preprocessing, exploring and plotting spatial-temporal data.
 
-## 📁 Repository structure
+## Repository structure
 
 
-├── data_preprocessing/ # scripts for cleaning / preparing raw data
-├── exploration/ # exploratory analysis notebooks / scripts
-├── plots/ # output visualizations (PNG, etc)
-├── main.py # main entry point for the workflow
-├── .gitignore
+├── data_preprocessing/ # scripts for cleaning / preparing raw data \\
+├── exploration/ # exploratory analysis notebooks / scripts \\
+├── plots/ # output visualizations (PNG, etc) \\
+├── main.py # main entry point for the workflow \\
+├── .gitignore \\
 └── README.md
 
 
