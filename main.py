@@ -16,7 +16,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Build cycling winners dataset.")
     p.add_argument("--include-indices", default=False)
     p.add_argument("--augment-fixation", default=False)
-    p.add_argument("--make-plots")
+    p.add_argument("--make-plots", default=False)
     p.add_argument("--data")
     p.add_argument("--output")
     args = p.parse_args()

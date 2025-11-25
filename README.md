@@ -2,20 +2,13 @@
 
 A Python project for ***spatio-temporal reading analysis*** — preprocessing, exploring and plotting spatial-temporal data.
 
-## Repository structure
 
+## Features
 
-├── data_preprocessing/ # scripts for cleaning / preparing raw data \\
-├── exploration/ # exploratory analysis notebooks / scripts \\
-├── plots/ # output visualizations (PNG, etc) \\
-├── main.py # main entry point for the workflow \\
-├── .gitignore \\
-└── README.md
-
-
-## ✅ Features
-
-- Data ingestion and preprocessing (in the `data_preprocessing/` folder).  
+- Data preprocessing: include the indices in the texts corresponding to each fixation. To run the data preprocessing:
+```bash
+python main.py --include-indices True --data "DATA_DIR"
+```
 - Exploratory analysis of spatial & temporal data (in `exploration/`).  
 - Generation of visualisations (in `plots/`) showing temporal changes over space.  
 - A unified `main.py` script to run the end-to-end workflow from raw data to visualization.

@@ -31,7 +31,11 @@ def include_index(meco_df, texts_df):
         idx_to_word = df_text.set_index("idx")["character"]
         df_loop["char_idx"] = df_loop.apply(lambda r: pick_id_bbox(df_text, r["x"], r["y"]), axis=1)
 
+        step += 1
+
         dfs.append(df_loop)
+        if step % 5 == 0:
+            print("Processed", step, "texts")
     
     out = pd.concat(dfs, ignore_index=True)
 
