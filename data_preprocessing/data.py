@@ -3,7 +3,6 @@ from data_preprocessing import preproc_funcs
 from pathlib import Path
 
 def include_index(datapath):
-    datapath = Path(datapath)
     meco_df = pd.read_csv(datapath / "hp_augmented_meco_100_1000_1_10.csv")
     texts_df = pd.read_csv(datapath / "hp_eng_texts_100_1000_1_10.csv")
 
