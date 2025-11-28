@@ -3,39 +3,41 @@ import numpy as np
 
 def include_index(meco_df, texts_df):
 
-    # Split by text
+    # Split by text and readers
     texts = meco_df["text"].unique()
+    readers = meco_df["reader"].unique()
 
     dfs = []
     step = 0
 
     for text in texts:
-        df_loop = meco_df[meco_df["text"] == text].copy()
-        df_text = texts_df[texts_df["text_id"] == text]
+        for reader in readers:
+            df_loop = meco_df[(meco_df["text"] == text) & (meco_df["reader"] == reader)].copy()
+            df_text = texts_df[texts_df["text_id"] == text]
 
-        if df_loop.empty or df_text.empty:
-            continue
+            if df_loop.empty or df_text.empty:
+                continue
 
-        # Compute the durations
-        dur_raw = df_loop["dur"] / 1000
+            # Compute the durations
+            dur_raw = df_loop["dur"] / 1000
 
-        # Compute the saccades
-        prev_end = df_loop["start"].shift(1) + dur_raw.shift(1)
-        sacc_dur = df_loop["start"] - prev_end
+            # Compute the saccades
+            prev_end = df_loop["start"].shift(1) + dur_raw.shift(1)
+            sacc_dur = df_loop["start"] - prev_end
 
-        # Append the saccades
-        df_loop["saccade"] = sacc_dur
+            # Append the saccades
+            df_loop["saccade"] = sacc_dur
 
-        # Append the character id in the rows where the fixation fell inside of the bounding box
-        idx_to_char = df_text.set_index("idx")["ia_word"]
-        idx_to_word = df_text.set_index("idx")["character"]
-        df_loop["char_idx"] = df_loop.apply(lambda r: pick_id_bbox(df_text, r["x"], r["y"]), axis=1)
+            # Append the character id in the rows where the fixation fell inside of the bounding box
+            idx_to_char = df_text.set_index("idx")["ia_word"]
+            idx_to_word = df_text.set_index("idx")["character"]
+            df_loop["char_idx"] = df_loop.apply(lambda r: pick_id_bbox(df_text, r["x"], r["y"]), axis=1)
 
-        step += 1
+            step += 1
 
-        dfs.append(df_loop)
-        if step % 5 == 0:
-            print("Processed", step, "texts")
+            dfs.append(df_loop)
+            if step % 50 == 0:
+                print("Processed", step, "scanpaths")
     
     out = pd.concat(dfs, ignore_index=True)
 

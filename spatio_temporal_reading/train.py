@@ -3,6 +3,7 @@ import torch
 import json
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from spatio_temporal_reading.data.data import MecoDataset
 from spatio_temporal_reading.model.model import SimpleModel
@@ -11,16 +12,6 @@ from spatio_temporal_reading.loss.loss import NegLogLikelihood
 def main(datapath):
 
     meco_df = pd.read_csv(datapath / "hp_augmented_meco_100_1000_1_10_model.csv").copy()
-    print(pd.isna(meco_df["x"]).to_numpy().sum())
-    print(pd.isna(meco_df["y"]).to_numpy().sum())
-    print(pd.isna(meco_df["freq"]).to_numpy().sum())
-    print(pd.isna(meco_df["dur"]).to_numpy().sum())
-    print(pd.isna(meco_df["saccade"]).to_numpy().sum())
-    print(pd.isna(meco_df["char_level_surp"]).to_numpy().sum())
-    print(pd.isna(meco_df["word_level_surprisal"]).to_numpy().sum())
-    print(pd.isna(meco_df["len"]).to_numpy().sum())
-
-    '''
 
     train_ds = MecoDataset(mode="train", datadir=datapath)
     val_ds = MecoDataset(mode="valid", datadir=datapath)
@@ -43,7 +34,7 @@ def main(datapath):
 
     model = SimpleModel(
         model_type="saccade",
-        d_in=train_ds.d_in,
+        d_in=train_ds.d_in_saccade,
         n_layers=2,
         d_model=30,
         n_admixture_components=5
@@ -61,24 +52,33 @@ def main(datapath):
     var_pos = torch.tensor([[var_x, 0], [0, var_y]])
     std_sacc = torch.tensor([np.sqrt(var_sacc)])
 
+    losses = []
+
     for epoch in range(30):
-        for i, input_item in enumerate(train_loader):
+        losses_epoch = 0
+        for i, item in enumerate(train_loader):
 
             optimizer.zero_grad()
 
-            # input_item has dimensions (n_batch, length_sequence, in_dim)
+            # Unpack the item
+            positions, durations, starting_times, saccades, reader_emb, features = item
 
-            print(torch.isnan(input_item).sum())
-
-            # Take up to the last item as input of the model
-            input_model = input_item[:, :-1, :]
-
+            # Take the input to the model; exclude the last fixation in the scanpath
+            input_model = torch.cat([
+                positions[:, :-1, :],
+                durations[:, :-1].unsqueeze(-1),
+                starting_times[:, :-1].unsqueeze(-1),
+                reader_emb[:, :-1, :],
+                features[:, :-1, :]],
+                dim=-1
+            )
+            
             # Pass the input through the model
             weights, positions_model, saccades_model = model(input_model)
 
-            # Take from the second item as targets; predict displacements and saccades
-            positions_target = input_item[:, 1:, :2] - input_item[:, :-1, :2]
-            saccades_target = input_item[:, 1:, 3]
+            # Find the targets; exclude the first fixation in the scanpath
+            positions_target = positions[:, 1:, :]
+            saccades_target = saccades[:, 1:]
 
             loss = NegLogLikelihood(
                 weights=weights,
@@ -90,11 +90,16 @@ def main(datapath):
                 std_sacc=std_sacc
             )
 
-            #print(loss)
-            print(f"reached step {i}")
+            losses_epoch += loss
+
+            losses.append(loss)
 
             loss.backward()
 
             optimizer.step()
 
-    '''
+        print(f"reached epoch {epoch}!! zio pera")
+        print(f"loss: {losses_epoch}")
+
+    plt.plot(losses)
+        

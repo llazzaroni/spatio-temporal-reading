@@ -1,5 +1,5 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.model_components import TransformerBlock
+from spatio_temporal_reading.model.transformer_components import TransformerBlock
 
 
 class SimpleModel(nn.Module):

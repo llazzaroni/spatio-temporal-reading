@@ -29,12 +29,14 @@ class TransformerBlock(nn.Module):
 
 
 class AttentionBlock(nn.Module):
+
     def __init__(self, d_model):
         super().__init__()
         self.d_model = d_model
         self.keys_linear = nn.Linear(d_model, d_model)
         self.queries_linear = nn.Linear(d_model, d_model)
         self.values_linear = nn.Linear(d_model, d_model)
+        self.IGNORE = float("-inf")
 
     def forward(self, tokens):
         # tokens have dimensions (batches, len_sequence, d_model)
@@ -46,6 +48,9 @@ class AttentionBlock(nn.Module):
 
         # Second compute the attention scores
         scores = torch.matmul(queries, torch.transpose(keys, 1, 2))
+
+        # Apply the causal mask
+        scores = self.apply_causal_mask(scores)
         
         # Third normalize by the model dimension
         scores = scores / (self.d_model ** 0.5)
@@ -57,6 +62,12 @@ class AttentionBlock(nn.Module):
         out = torch.matmul(attn, values) # (batches, len_sequences, d_model)
 
         return out
+    
+    def apply_causal_mask(self, scores):
+        ones = torch.ones_like(scores) # (n_batches, len_sequences, len_sequences)
+        mask = torch.triu(ones, diagonal=1)
+        mask = mask.to(torch.bool)
+        return scores.masked_fill(mask, self.IGNORE)
     
 
 class ffn(nn.Module):

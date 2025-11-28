@@ -54,7 +54,8 @@ class MecoDataset(Dataset):
         elif mode == "test":
             self.items = test_items
 
-        self.d_in = 2 + 2 + len(self.reader_to_idx) + 8
+        self.d_in_saccade = 2 + 2 + len(self.reader_to_idx) + 8
+
     
     def __getitem__(self, index):
         item = self.items[index]
@@ -70,8 +71,9 @@ class MecoDataset(Dataset):
 
         # Temporal information
         # No nans in temporal information
-        #dur_tensor = torch.tensor(subset[["dur", "start", "saccade"]].values, dtype=torch.float32)
-        dur_tensor = torch.tensor(subset[["dur", "saccade"]].values, dtype=torch.float32)
+        dur_tensor = torch.tensor(subset["dur"].values, dtype=torch.float32)
+        start_tensor = torch.tensor(subset["start"].values, dtype=torch.float32)
+        sacc_tensor = torch.tensor(subset["saccade"].values, dtype=torch.float32)
 
         # Reader information
         # No nans in reader information
@@ -84,9 +86,16 @@ class MecoDataset(Dataset):
         features = torch.tensor(subset[["char_level_surp", "word_level_surprisal", "len", "freq", "char_level_surp_nan", "word_level_surprisal_nan", "len_nan", "freq_nan"]].values, dtype=torch.float32)
 
 
-        result = (torch.cat([history_points, dur_tensor, reader_emb, features], dim=-1))
+        #result = (torch.cat([history_points, dur_tensor, reader_emb, features], dim=-1))
 
-        return result
+        return (
+            history_points,
+            dur_tensor,
+            start_tensor,
+            sacc_tensor,
+            reader_emb,
+            features
+        )
 
 
     def __len__(self):
