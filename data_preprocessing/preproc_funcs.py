@@ -50,6 +50,53 @@ def pick_id_bbox(df_text, x, y):
     else:
         return pd.NA
 
+def handle_nans(df_meco: pd.DataFrame) -> pd.DataFrame:
+    df = df_meco.copy()
+
+    cols = ["char_level_surp", "word_level_surprisal", "len", "freq"]
+
+    for col in cols:
+        nans = df[col].isna()
+        df[f"{col}_nan"] = nans.astype(int)
+        df.loc[nans, col] = 0
+        
+    return df
+
+def compute_variances(df_meco: pd.DataFrame) -> dict:
+    # Compute variance for displacement along the x and y axes
+    texts = df_meco["text"].unique()
+    readers = df_meco["reader"].unique()
+
+    dfs = []
+
+    for text in texts:
+        for reader in readers:
+            df_loop = df_meco[(df_meco["reader"] == reader) & (df_meco["text"] == text)].copy()
+
+            if df_loop.empty:
+                continue
+
+            df_loop["dx"] = df_loop["x"].diff(1)
+            df_loop["dy"] = df_loop["y"].diff(1)
+
+            df_var = df_loop[["dx", "dy", "saccade"]].dropna()
+
+            if not df_var.empty:
+                dfs.append(df_var)
+
+    df_var = pd.concat(dfs, ignore_index=True)
+
+    var_x = df_var["dx"].var()
+    var_y = df_var["dy"].var()
+    var_sacc = df_var["saccade"].var()
+
+    return {
+        "var_x": var_x,
+        "var_y": var_y,
+        "var_sacc": var_sacc,
+    }
+
+
 
 
 

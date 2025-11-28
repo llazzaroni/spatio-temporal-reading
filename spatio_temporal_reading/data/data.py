@@ -4,7 +4,6 @@ import numpy as np
 import torch
 
 import spatio_temporal_reading.data.utils as utils
-from spatio_temporal_reading.data.feature_funcs import feature_func
 
 class MecoDataset(Dataset):
 
@@ -15,7 +14,7 @@ class MecoDataset(Dataset):
     ):
 
         # Read the csvs
-        self.meco_df = pd.read_csv(datadir / "hp_augmented_meco_100_1000_1_10_sacc_idx.csv").copy()
+        self.meco_df = pd.read_csv(datadir / "hp_augmented_meco_100_1000_1_10_model.csv").copy()
         self.texts_df = pd.read_csv(datadir / "hp_eng_texts_100_1000_1_10.csv").copy()
 
         self.meco_df["freq"] = -np.log(self.meco_df["freq"] + 1e-9) # unigram surprisal (log frequency)
@@ -54,43 +53,40 @@ class MecoDataset(Dataset):
             self.items = valid_items
         elif mode == "test":
             self.items = test_items
-        
-        # Save information about splits in the meco_df field
 
-        self.indices = {idx: item for idx, item in enumerate(self.items)}
-        dic = {
-            **dict.fromkeys(train_items, "train"),
-            **dict.fromkeys(valid_items, "valid"),
-            **dict.fromkeys(test_items, "test"),
-        }
-        self.meco_df["split"] = [
-            (dic[(text, reader, fixid - 1)])
-            for text, reader, fixid in zip(
-                self.meco_df.text, self.meco_df.reader, self.meco_df.fixid
-            )
-        ]
-
+        self.d_in = 2 + 2 + len(self.reader_to_idx) + 8
     
-    def __get_item__(self, index):
-        item = self.indices[index]
+    def __getitem__(self, index):
+        item = self.items[index]
 
         text = item[0]
         reader = item[1]
-        current_observation = item[2]
 
         subset = self.meco_df[(self.meco_df["text"] == text) & (self.meco_df["reader"] == reader)].copy()
 
-        history_points = torch.tensor(subset[["saccade_intervals", "x", "y"]].values, dtype=torch.float32) # why saccade intervals?
-        dur_tensor = torch.tensor(subset[["dur", "start"]].values, dtype=torch.float32)
-        input_features_tensor_stpp = feature_func(
-            subset, self.texts_df, self.reader_to_idx
-        )
+        # Spatial information
+        # No nans in history points
+        history_points = torch.tensor(subset[["x", "y"]].values, dtype=torch.float32)
 
-        result = torch.concatenate([history_points, dur_tensor, input_features_tensor_stpp], axis=1)
+        # Temporal information
+        # No nans in temporal information
+        #dur_tensor = torch.tensor(subset[["dur", "start", "saccade"]].values, dtype=torch.float32)
+        dur_tensor = torch.tensor(subset[["dur", "saccade"]].values, dtype=torch.float32)
+
+        # Reader information
+        # No nans in reader information
+        reader_id = subset["reader"].iloc[0]
+        reader_idx = self.reader_to_idx[reader_id]
+        reader_emb = torch.zeros(len(subset), len(self.reader_to_idx), dtype=torch.float32)
+        reader_emb[:, reader_idx] = 1
+
+        # Features
+        features = torch.tensor(subset[["char_level_surp", "word_level_surprisal", "len", "freq", "char_level_surp_nan", "word_level_surprisal_nan", "len_nan", "freq_nan"]].values, dtype=torch.float32)
+
+
+        result = (torch.cat([history_points, dur_tensor, reader_emb, features], dim=-1))
 
         return result
-
-
 
 
     def __len__(self):
@@ -107,43 +103,25 @@ class MecoDataset(Dataset):
         # Shuffle the list randomly
         self.rnd.shuffle(item_corpus)
 
-        # Extend the list to sample the correct percentage
-        sample_list = [
-            (idx_text, idx_reader, single_count)
-            for idx_text, idx_reader, abs_count in item_corpus
-            for single_count in range(abs_count)
-        ]
-
-        train_items = sample_list[:int(0.8 * len(sample_list))]
-        last_text_train = train_items[-1][0]
-        last_reader_train = train_items[-1][1]
-
-        i = len(train_items)
-
-        while sample_list[i][0] == last_text_train and sample_list[i][1] == last_reader_train:
-            if i == len(sample_list):
-                raise Exception
-            train_items.append(sample_list[i])
-            i += 1
-
-        train_share = len(train_items)
+        # Build train, val and test splits
+        train_items = []
+        len_train_items = 0
+        for i in range(len(item_corpus)):
+            train_items.append((item_corpus[i][0], item_corpus[i][1]))
+            len_train_items += item_corpus[i][2]
+            if len_train_items >= 0.8 * len(self.meco_df):
+                break
         
-        val_items = sample_list[train_share:int(0.9 * len(sample_list))]
-        last_text_val = val_items[-1][0]
-        last_reader_val = val_items[-1][1]
+        val_items = []
+        len_val_items = 0
+        for i in range(len(train_items), len(item_corpus)):
+            val_items.append((item_corpus[i][0], item_corpus[i][1]))
+            len_val_items += item_corpus[i][2]
+            if len_val_items >= 0.1 * len(self.meco_df):
+                break
+        
+        test_items = item_corpus[len(train_items) + len(val_items):]
 
-        i = train_share + len(val_items)
-
-        while sample_list[i][0] == last_text_val and sample_list[i][1] == last_reader_val:
-            if i == len(sample_list):
-                raise Exception
-            val_items.append(sample_list[i])
-            i += 1
-
-        val_share = len(val_items)
-
-        test_items = sample_list[train_share + val_share:]
-
-        test_share = len(test_items)
+        #print(len(train_items), len(test_items), len(val_items))
 
         return train_items, val_items, test_items
