@@ -67,7 +67,7 @@ class MecoDataset(Dataset):
 
         # Spatial information
         # No nans in history points
-        history_points = torch.tensor(subset[["x", "y"]].values, dtype=torch.float32)
+        history_points = torch.tensor(subset[["dx", "dy"]].values, dtype=torch.float32)
 
         # Temporal information
         # No nans in temporal information

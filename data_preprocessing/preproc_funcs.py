@@ -28,6 +28,10 @@ def include_index(meco_df, texts_df):
             # Append the saccades
             df_loop["saccade"] = sacc_dur
 
+            # Append dx and dy
+            df_loop["dx"] = df_loop["x"].diff(1)
+            df_loop["dy"] = df_loop["y"].diff(1)
+
             # Append the character id in the rows where the fixation fell inside of the bounding box
             idx_to_char = df_text.set_index("idx")["ia_word"]
             idx_to_word = df_text.set_index("idx")["character"]
@@ -64,34 +68,13 @@ def handle_nans(df_meco: pd.DataFrame) -> pd.DataFrame:
         
     return df
 
-def compute_variances(df_meco: pd.DataFrame) -> dict:
+def compute_variances(meco_df) -> dict:
     # Compute variance for displacement along the x and y axes
-    texts = df_meco["text"].unique()
-    readers = df_meco["reader"].unique()
+    valid = ~pd.isna(meco_df["saccade"])
 
-    dfs = []
-
-    for text in texts:
-        for reader in readers:
-            df_loop = df_meco[(df_meco["reader"] == reader) & (df_meco["text"] == text)].copy()
-
-            if df_loop.empty:
-                continue
-
-            df_loop["dx"] = df_loop["x"].diff(1)
-            df_loop["dy"] = df_loop["y"].diff(1)
-
-            df_var = df_loop[["dx", "dy", "saccade"]].dropna()
-
-            if not df_var.empty:
-                dfs.append(df_var)
-
-    df_var = pd.concat(dfs, ignore_index=True)
-
-    var_x = df_var["dx"].var()
-    var_y = df_var["dy"].var()
-    var_sacc = df_var["saccade"].var()
-
+    var_x = meco_df[valid]["dx"].var()
+    var_y = meco_df[valid]["dy"].var()
+    var_sacc = meco_df[valid]["saccade"].var()
     return {
         "var_x": var_x,
         "var_y": var_y,

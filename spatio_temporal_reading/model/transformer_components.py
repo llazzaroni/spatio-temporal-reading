@@ -36,10 +36,12 @@ class AttentionBlock(nn.Module):
         self.keys_linear = nn.Linear(d_model, d_model)
         self.queries_linear = nn.Linear(d_model, d_model)
         self.values_linear = nn.Linear(d_model, d_model)
+        self.distance_scale = nn.Parameter(torch.tensor(0.01))
         self.IGNORE = float("-inf")
 
     def forward(self, tokens):
         # tokens have dimensions (batches, len_sequence, d_model)
+        B, T, D = tokens.shape
 
         # First compute keys, queries and values
         keys = self.keys_linear(tokens) # (batches, len_sequences, d_model)
@@ -47,7 +49,13 @@ class AttentionBlock(nn.Module):
         values = self.values_linear(tokens) # (batches, len_sequences, d_model)
 
         # Second compute the attention scores
-        scores = torch.matmul(queries, torch.transpose(keys, 1, 2))
+        scores = torch.matmul(queries, torch.transpose(keys, 1, 2)) # (batches, len_sequences, d_model)
+
+        # Give a bias towards close tokens
+        positions = torch.arange(T)
+        distance = (positions.unsqueeze(0) - positions.unsqueeze(1)).abs().float()  # (T, T)
+        distance_bias = -self.distance_scale * distance 
+        scores = scores + distance_bias.unsqueeze(0) # (batches, len_sequences, len_sequences)
 
         # Apply the causal mask
         scores = self.apply_causal_mask(scores)
