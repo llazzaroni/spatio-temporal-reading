@@ -17,6 +17,9 @@ class MecoDataset(Dataset):
         self.meco_df = pd.read_csv(datadir / "hp_augmented_meco_100_1000_1_10_model.csv").copy()
         self.texts_df = pd.read_csv(datadir / "hp_eng_texts_100_1000_1_10.csv").copy()
 
+        sizes = self.meco_df.groupby(["text", "reader"]).size().to_numpy()
+        self.max_len = sizes.max()
+
         self.meco_df["freq"] = -np.log(self.meco_df["freq"] + 1e-9) # unigram surprisal (log frequency)
         self.meco_df["dur"] = np.log(self.meco_df["dur"] + 1e-9)
 

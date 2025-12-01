@@ -19,6 +19,7 @@ def main(datapath, outputpath, args):
         "d_model": args.d_model,
         "n_layers": args.n_layers,
         "n_admixture_components": args.n_components,
+        "max_len": train_ds.max_len
     }
 
     train_loader = DataLoader(
@@ -42,7 +43,8 @@ def main(datapath, outputpath, args):
         d_in=train_ds.d_in_saccade,
         n_layers=config["n_layers"],
         d_model=config["d_model"],
-        n_admixture_components=config["n_admixture_components"]
+        n_admixture_components=config["n_admixture_components"],
+        max_len=config["max_len"]
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)

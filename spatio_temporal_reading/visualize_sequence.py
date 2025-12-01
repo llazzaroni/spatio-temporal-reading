@@ -12,7 +12,8 @@ from spatio_temporal_reading.model.model import SimpleModel
 
 
 def load_model(checkpoint_path):
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    # Explicitly allow full checkpoint loading (needed for older saves)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint["config"]
     model = SimpleModel(**config)
     model.load_state_dict(checkpoint["model_state_dict"])

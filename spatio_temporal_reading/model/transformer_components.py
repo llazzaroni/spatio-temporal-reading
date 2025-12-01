@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 # Define all the model components / submodules
 
@@ -53,7 +54,7 @@ class AttentionBlock(nn.Module):
 
         # Give a bias towards close tokens
         positions = torch.arange(T)
-        distance = (positions.unsqueeze(0) - positions.unsqueeze(1)).abs().float()  # (T, T)
+        distance = (positions.unsqueeze(0) - positions.unsqueeze(1)).abs().float()
         distance_bias = -self.distance_scale * distance 
         scores = scores + distance_bias.unsqueeze(0) # (batches, len_sequences, len_sequences)
 
@@ -90,6 +91,34 @@ class ffn(nn.Module):
         x = F.relu(x)
         x = self.linear2(x)
         return x
+    
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len):
+        super().__init__()
+
+        self.alpha = nn.Parameter(torch.tensor(0.1))
+
+        positions = torch.arange(0, max_len, dtype = torch.float32).unsqueeze(1) # (max_len, 1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)) 
+
+        pe_raw = positions * div_term # (max_len, d_model)
+
+        pe = torch.zeros(max_len, d_model)
+        pe[:, 0::2] = torch.sin(pe_raw)
+        pe[:, 1::2] = torch.cos(pe_raw)
+
+        pe = pe.unsqueeze(0) # (1, max_len, d_model)
+
+        self.pe = pe
+
+    def forward(self, x):
+        return x + self.pe[:, :x.shape[1], :] * self.alpha
+
+        
+
+    
 
         
 

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.transformer_components import TransformerBlock
+from spatio_temporal_reading.model.transformer_components import TransformerBlock, PositionalEncoding
 
 
 class SimpleModel(nn.Module):
@@ -9,7 +9,8 @@ class SimpleModel(nn.Module):
             d_in,
             d_model,
             n_layers,
-            n_admixture_components
+            n_admixture_components,
+            max_len
     ):
         super().__init__()
 
@@ -18,6 +19,7 @@ class SimpleModel(nn.Module):
         self.d_model = d_model
         self.n_layers = n_layers
         self.n_admixture_components = n_admixture_components
+        self.max_len = max_len
         self.initialize_submodules()
 
     def initialize_submodules(self):
@@ -45,6 +47,9 @@ class SimpleModel(nn.Module):
         self.get_positions = nn.Linear(in_features=self.d_model, out_features = self.n_admixture_components * 2)
         self.get_saccades = nn.Linear(in_features=self.d_model, out_features=self.n_admixture_components)
 
+        # Positional encoding
+        self.positional_enc = PositionalEncoding(self.d_model, self.max_len)
+
     
     def initialize_submodules_duration(self):
         raise NotImplementedError
@@ -53,6 +58,8 @@ class SimpleModel(nn.Module):
     def forward_saccades(self, x):
         # Input of dimension (n_batches, len_sequence, d_in)
         embeddings = self.input_proj(x) # (n_batches, len_sequence, d_model)
+
+        #embeddings = self.positional_enc.forward(embeddings)
 
         # Go through the attention layers
         hidden_states = embeddings
