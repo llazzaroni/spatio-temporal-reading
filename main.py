@@ -1,5 +1,16 @@
 import argparse
+import sys
 from pathlib import Path
+import warnings
+warnings.filterwarnings("ignore", message="'pin_memory' argument is set as true but not supported on MPS")
+
+# Make the submodule importable when running from the repo root.
+ROOT = Path(__file__).resolve().parent
+SUBMODULE = ROOT / "submodule"
+SUBMODULE_SRC = SUBMODULE / "src"
+for path in (SUBMODULE, SUBMODULE_SRC):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 from data_preprocessing import data
 from exploration import exploration
