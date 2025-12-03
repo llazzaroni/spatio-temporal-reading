@@ -3,19 +3,21 @@ import pandas as pd
 import numpy as np
 import torch
 
-import spatio_temporal_reading.data.utils as utils
-
 class MecoDataset(Dataset):
 
     def __init__(
             self,
             mode,
+            filtering,
             datadir
     ):
 
         # Read the csvs
         self.meco_df = pd.read_csv(datadir / "hp_augmented_meco_100_1000_1_10_model.csv").copy()
         self.texts_df = pd.read_csv(datadir / "hp_eng_texts_100_1000_1_10.csv").copy()
+
+        if filtering == "filtered":
+            self.meco_df = self.meco_df[self.meco_df["ianum_word"].isna() == False]
 
         sizes = self.meco_df.groupby(["text", "reader"]).size().to_numpy()
         self.max_len = sizes.max()
@@ -35,11 +37,6 @@ class MecoDataset(Dataset):
         self.texts_df["char_idx"] = self.texts_df["character"].apply(lambda x: char_to_idx[x.lower()])
         self.texts_df["c_value"] = 1
         self.texts_df["is_capitalized"] = self.texts_df["character"].apply(lambda x: x.isupper())
-
-        # To understand later what for
-        self.boxes, self.one_hot, self.boxes_centroid, text_ids, self.char_info = (
-            utils.create_boxes_tensor_from_dataframe(self.texts_df)
-        )
 
         self.texts_df["x_diff"] = self.texts_df["bbox_x2"] - self.texts_df["bbox_x1"]
         self.texts_df["y_diff"] = self.texts_df["bbox_y2"] - self.texts_df["bbox_y1"]
@@ -133,7 +130,5 @@ class MecoDataset(Dataset):
                 break
         
         test_items = item_corpus[len(train_items) + len(val_items):]
-
-        #print(len(train_items), len(test_items), len(val_items))
 
         return train_items, val_items, test_items

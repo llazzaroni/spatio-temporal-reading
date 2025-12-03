@@ -10,10 +10,10 @@ from spatio_temporal_reading.trainer.trainer import Trainer
 
 def main(datapath, outputpath, args):
 
-    train_ds = MecoDataset(mode="train", datadir=datapath)
-    val_ds = MecoDataset(mode="valid", datadir=datapath)
+    train_ds = MecoDataset(mode="train", filtering="raw", datadir=datapath)
+    val_ds = MecoDataset(mode="valid", filtering="raw", datadir=datapath)
 
-    config = {
+    model_config = {
         "model_type": args.model_type,
         "d_in": train_ds.d_in_saccade,
         "d_model": args.d_model,
@@ -39,17 +39,17 @@ def main(datapath, outputpath, args):
     )
 
     model = SimpleModel(
-        model_type=config["model_type"],
+        model_type=model_config["model_type"],
         d_in=train_ds.d_in_saccade,
-        n_layers=config["n_layers"],
-        d_model=config["d_model"],
-        n_admixture_components=config["n_admixture_components"],
-        max_len=config["max_len"]
+        n_layers=model_config["n_layers"],
+        d_model=model_config["d_model"],
+        n_admixture_components=model_config["n_admixture_components"],
+        max_len=model_config["max_len"]
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    trainer = Trainer(train_loader, val_loader, args.epochs, model, optimizer, datapath, outputpath, config)
+    trainer = Trainer(train_loader, val_loader, args.epochs, model, optimizer, datapath, outputpath, model_config)
 
     trainer.train()
 

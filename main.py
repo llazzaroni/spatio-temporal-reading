@@ -3,7 +3,7 @@ from pathlib import Path
 
 from data_preprocessing import data
 from exploration import exploration
-from spatio_temporal_reading import train, visualize_sequence
+from spatio_temporal_reading import train, train_baseline, visualize_sequence
 
 def main(args):
     if args.data:
@@ -22,6 +22,12 @@ def main(args):
             outputpath=outputpath,
             args=args
         )
+    if args.train_baseline:
+        train_baseline.main(
+            datapath=datapath,
+            outputpath=outputpath,
+            args=args
+        )
     if args.visualize_model:
         visualize_sequence.main(datapath, checkpoint_path, outputpath, args)
 
@@ -32,6 +38,7 @@ if __name__ == "__main__":
     p.add_argument("--augment-fixation", default=False, action="store_true")
     p.add_argument("--make-plots", default=False, action="store_true")
     p.add_argument("--train", default=False, action="store_true")
+    p.add_argument("--train-baseline", default=False, action="store_true")
     p.add_argument("--visualize-model", default=False, action="store_true")
     p.add_argument("--train_index", type=int, default=0)
     p.add_argument("--val_index", type=int, default=0)
