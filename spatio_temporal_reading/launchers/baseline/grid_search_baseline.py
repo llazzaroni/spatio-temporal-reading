@@ -220,6 +220,8 @@ def main(datapath):
                 for weight_decay in weight_decays:
                     cfg.weight_decay = weight_decay
 
+                    print("Training a new model. Saving outputs to:", model["directory_name"])
+
                     if model["model_type"] == "duration":
                         for alpha_beta in alphas_betas:
                             cfg.alpha_g = alpha_beta[0]

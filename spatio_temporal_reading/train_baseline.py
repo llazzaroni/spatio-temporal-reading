@@ -29,6 +29,7 @@ def select_best_checkpoint(root):
             if val_loss is not None and val_loss < best_loss:
                 best_loss = val_loss
                 best = run
+    print("Found the best model at", best)
     return best
 
 

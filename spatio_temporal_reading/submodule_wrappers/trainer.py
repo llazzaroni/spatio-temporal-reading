@@ -15,13 +15,16 @@ class TrainerW(Trainer):
             self.loss_tracker_global["train"][self.cfg.model_type].append(stats_train)
 
             train_loss_mean = stats_train[0]
-            print(f"train mean loss: {train_loss_mean}")
+            
 
             stats_val = self.validate_epoch(val_loader)
             self.loss_tracker_global["val"][self.cfg.model_type].append(stats_val)
 
             val_loss_mean = stats_val[0]
-            print(f"val mean loss: {val_loss_mean}")
+            if epoch % 5 == 0:
+                print("Reached epoch", epoch)
+                print(f"train mean loss: {train_loss_mean}")
+                print(f"val mean loss: {val_loss_mean}")
 
             if self.check_early_stopping(stats_val[0], epoch=epoch):
                 break
@@ -36,8 +39,6 @@ class TrainerW(Trainer):
                 self.optimizer = torch.optim.Adam(
                     self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
                 )
-
-            print("Reached epoch", epoch)
 
     def check_early_stopping(self, valid_loss, epoch):
         stop = False
