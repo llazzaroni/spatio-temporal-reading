@@ -75,7 +75,7 @@ class Trainer:
                     std_sacc=self.std_sacc
                 )
 
-                losses_epoch.append(loss.item() / positions_model.shape[2])
+                losses_epoch.append(loss.item() / positions_model.shape[1])
 
                 loss.backward()
 
@@ -131,7 +131,7 @@ class Trainer:
                     std_sacc=self.std_sacc
                 )
 
-                losses.append(loss.item() / positions_model.shape[2])
+                losses.append(loss.item() / positions_model.shape[1])
 
         return np.array(losses).mean()
 

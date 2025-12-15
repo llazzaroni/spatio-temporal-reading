@@ -8,13 +8,15 @@ warnings.filterwarnings("ignore", message="'pin_memory' argument is set as true 
 ROOT = Path(__file__).resolve().parent
 SUBMODULE = ROOT / "submodule"
 SUBMODULE_SRC = SUBMODULE / "src"
-for path in (SUBMODULE, SUBMODULE_SRC):
+SUBMODULE_SCRIPTS = SUBMODULE / "scripts"
+for path in (SUBMODULE, SUBMODULE_SRC, SUBMODULE_SCRIPTS):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
 from data_preprocessing import data
 from exploration import exploration
 from spatio_temporal_reading import train, train_baseline, visualize_sequence
+from spatio_temporal_reading.launchers.baseline import grid_search_baseline
 
 def main(args):
     if args.data:
@@ -34,11 +36,12 @@ def main(args):
             args=args
         )
     if args.train_baseline:
-        train_baseline.main(
-            datapath=datapath,
-            outputpath=outputpath,
-            args=args
-        )
+        # train_baseline.main(
+        #     datapath=datapath,
+        #     outputpath=outputpath
+        # )
+        grid_search_baseline.main(datapath)
+        
     if args.visualize_model:
         visualize_sequence.main(datapath, checkpoint_path, outputpath, args)
 

@@ -3,6 +3,7 @@ import torch
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from typing import Any, Dict
+import json
 
 from submodule.src.dataset import feature_funcs
 from spatio_temporal_reading.submodule_wrappers.dataset import MecoDatasetW
@@ -12,75 +13,27 @@ from submodule.src.model.saccades.log_likelihood import set_saccadesNLL
 from submodule.src.model.durations.log_likelihood import DurationNLL
 from spatio_temporal_reading.submodule_wrappers.trainer import TrainerW
 
-
-@dataclass
-class RunConfig:
-
-    epochs: int = 2
-    batch_size: int = 512
-    learning_rate: float = 0.001
-    weight_decay: float = 0.0
-    optimizer: str = "SGDNesterov"  # Adam | SGDNesterov
-    gradient_clipping: bool = True
-    patience: int = 5
-    lr_rescaling: float = 0.99
-    training: str = "true"  # "true" | "false"
-    final_testing: str = "true"  # "true" | "false"
-    splitting_procedure: str = "random_shuffle"
-    subset: str = "true"  # "true" | "false"
-    subset_size: int = 2_000
-    dataset_filtering: str = "filtered"  # "filtered" | "raw"
-    model_type: str = "saccade"  # "saccade" | "duration"
-    missing_value_effects: str = "linear_term"  # "linear_term" | "ignore" |
-    saccade_likelihood: str = (
-        "HomogenousPoisson"  # "HomogenousPoisson" | "StandardHawkesProcess" | "ExtendedHawkesProcess", "LastFixationModel"
-    )
-    saccade_predictors_funcs: str = "past_position"
-    # "past_position" | "past_position_reader" |
-    # "past_position_reader_duration" | "past_position_reader_char" | "past_position_reader_word"
-    dur_likelihood: str = (
-        "normal"  # "rayleigh" | "exponential" | "lognormal" | "normal"
-    )
-    duration_predictors_funcs: str = "dur_model_reader_dur_conv_features"
-    # dur_model_baseline
-    # dur_model_reader_char_conv_features, dur_model_reader_dur_conv_features, dur_model_reader_word_conv_features
-    load_checkpoint: str = "false"
-    checkpoint_path: Path | None = None
-    strict_load: bool = False
-    # reproducibility / hardware
-    seed: int = 124
-    nworkers: int = 0
-    # directory for the experiments
-    experiment_dir: str = str("runs")
-    # directory for the specific run
-    directory_name: str = f"hp_{saccade_likelihood}"
-    # we set this to None whenever we want to test on the same model we are training
-    # if we set testing = True, training = False, we will not train a model, so we can set this to the directory of the model we want to test
-    test_model_dir: Path | None = (
-        "/Users/francescoignaziore/Projects/fine-grained-model-reading-behaviour/cluster_runs/saccade/rme_css_len_raw_2025-06-06_05-12-54-487/best_model"
-    )
-    # In the Meco dataset durations and saccades are expressed in milliseconds
-    # interarrival saccades times between two consequent saccades have a median of 27 ms.
-    # in an exponential kernel, a * exp-b(27) is an extremely small value unless there is a big value of (a,b) to counterbalance it.
-    # In order to avoid numerical issues, we divide the saccade-intervals by 1000 to convert them to seconds, to allow for a range of values of plausible candidate (a,b) that is more stable for optimization.
-    # scaling factors to avoid numerical issues
-    division_factor_space: int = 100
-    division_factor_time: int = 1000
-    division_factor_durations: int = 1
-    past_timesteps_duration_baseline_k: int = 10
-    # initialization of parameters for convolution gamma kernel
-    alpha_g: float = 0.1
-    delta_g: float = 0.1
-    beta_g: float = 0.1
-
 class DummyLogger:
     def info(self, *args, **kwargs):
         pass
 
+def select_best_checkpoint(root):
+    best = None
+    best_loss = float("inf")
+    for run in root.iterdir():
+        metrics = run / "metrics.json"
+        weights = run / "best_model_baseline.pt"
+        if metrics.exists() and weights.exists():
+            with metrics.open() as f:
+                val_loss = json.load(f).get("val_loss")
+            if val_loss is not None and val_loss < best_loss:
+                best_loss = val_loss
+                best = run
+    return best
 
-def main(datapath, outputpath, args):
 
-    cfg = RunConfig
+def main(datapath, cfg, load_model, load_path):
+
     device = "cpu"
     logger = DummyLogger()
 
@@ -127,7 +80,20 @@ def main(datapath, outputpath, args):
         model_type=cfg.model_type,
         cfg=cfg,
         logger=logger,
-    ).to(device)    
+    ).to(device)
+
+
+    # Load the model   
+    if load_model:
+        root = datapath / load_path
+        load_dir = select_best_checkpoint(root)
+        checkpoint = torch.load(
+            f=load_dir / "best_model_baseline.pt",
+            map_location=device,
+        )
+        model.load_state_dict(state_dict=checkpoint, strict=cfg.strict_load)
+
+        model.to(device)
 
     conv_param_names = {"gamma_alpha", "gamma_beta"}
     conv_params = []
@@ -165,15 +131,26 @@ def main(datapath, outputpath, args):
         else DurationNLL(distribution=cfg.dur_likelihood)
     )
 
+    result_dir = datapath / cfg.directory_name
+    result_dir.mkdir(parents=True, exist_ok=True)
+    dir_string = str(cfg.model_type) + "_" + str(cfg.batch_size) + "_" + str(cfg.learning_rate) + "_" + str(cfg.weight_decay)
+    if cfg.model_type == "duration":
+        dir_string += "_" + str(cfg.alpha_g) + "_" + str(cfg.beta_g)
+    experiment_dir = result_dir / dir_string
+
     trainer = TrainerW(
         cfg=cfg,
         model=model,
         optimizer=optimizer,
         criterion=NegativeLogLikelihood,
-        run_dir=datapath,
+        run_dir=experiment_dir,
         logging=logger,
         device=device,
         patience=cfg.patience,
     )
 
     trainer.train(train_loader, val_loader=val_loader, epochs=cfg.epochs)
+
+    cfg_path = experiment_dir / "config.json"
+    with cfg_path.open("w") as f:
+        json.dump(asdict(cfg), f, indent=2, default=str)
