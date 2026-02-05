@@ -182,6 +182,10 @@ def main(datapath):
     cfg = RunConfig()
 
     for model in MODELS.values():
+        ############### skip models that have already been trained. TO REMOVE LATER! ###############
+        #if model["directory_name"] == "BASE_LF_RAW" or model["directory_name"] == "BASE_SHP_RAW" or model["directory_name"] == "CSS_RAW" or model["directory_name"] == "poisson_raw_baseline" or model["directory_name"] == "RME_CSS_CHAR_LEN_FREQ_RAW" or model["directory_name"] == "RME_CSS_CS_RAW" or model["directory_name"] == "RME_CSS_DUR_RAW" or model["directory_name"] == "RME_CSS_DUR_RAW" or model["directory_name"] == "RME_CSS_FREQ_RAW" or model["directory_name"] == "RME_CSS_LEN_FREQ_RAW" or model["directory_name"] == "RME_CSS_LEN_RAW" or model["directory_name"] == "RME_CSS_WORD_LEN_FREQ_RAW" or model["directory_name"] == "RME_CSS_WS_RAW":
+        #    continue
+        ############### skip models that have already been trained. TO REMOVE LATER! ###############
         # Build the cfg
         cfg.model_type = model["model_type"]
         if "saccade_likelihood" in model:
