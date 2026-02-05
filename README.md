@@ -29,3 +29,9 @@ python main.py --visualize-model --data DATA_DIR --output OUTPUT_DIR --checkpoin
 ```
 
 This command will produce four gifs, showcasing the predictions of the model vs actual points for fixation locations and saccade durations, for a sequence in the training set and one in the validation set. Note that, to be able to run the last command, the model has to be trained first and the checkpoint path has to point to the location of the .pt file containing the model. Additionally, the flags --train-index and --val-index can be chosen.
+
+To train the baseline models, run:
+
+```bash
+python main.py --train-baseline --data DATA_DIR
+```

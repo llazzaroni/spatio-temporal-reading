@@ -15,7 +15,7 @@ for path in (SUBMODULE, SUBMODULE_SRC, SUBMODULE_SCRIPTS):
 
 from data_preprocessing import data
 from exploration import exploration
-from spatio_temporal_reading import train, train_baseline, visualize_sequence
+from spatio_temporal_reading import train, train_baseline, visualize_sequence, test, test_baseline
 from spatio_temporal_reading.launchers.baseline import grid_search_baseline
 
 def main(args):
@@ -36,14 +36,19 @@ def main(args):
             args=args
         )
     if args.train_baseline:
-        # train_baseline.main(
-        #     datapath=datapath,
-        #     outputpath=outputpath
-        # )
-        grid_search_baseline.main(datapath)
-        
+        grid_search_baseline.main(datapath)        
     if args.visualize_model:
         visualize_sequence.main(datapath, checkpoint_path, outputpath, args)
+    if args.test:
+        test.main(
+            datapath=datapath,
+            args=args
+        )
+    if args.test_baseline:
+        test_baseline.main(
+            datapath=datapath,
+            args=args
+        )
 
 
 if __name__ == "__main__":
@@ -64,5 +69,9 @@ if __name__ == "__main__":
     p.add_argument("--data")
     p.add_argument("--output")
     p.add_argument("--checkpoint-path")
+    p.add_argument("--filtering", default="filtered")
+    p.add_argument("--test", default=False, action="store_true")
+    p.add_argument("--test-baseline", default=False, action="store_true")
+    p.add_argument("--models-path")
     args = p.parse_args()
     main(args)

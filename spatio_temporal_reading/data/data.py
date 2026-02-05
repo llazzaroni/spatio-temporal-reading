@@ -18,6 +18,7 @@ class MecoDataset(Dataset):
 
         if filtering == "filtered":
             self.meco_df = self.meco_df[self.meco_df["ianum_word"].isna() == False]
+            print("gangang")
 
         sizes = self.meco_df.groupby(["text", "reader"]).size().to_numpy()
         self.max_len = sizes.max()

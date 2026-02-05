@@ -263,38 +263,3 @@ class MecoDatasetW(MecoDataset):
         train_items_form = sample_list[: int(0.89 * len(sample_list))]
         valid_items_form = sample_list[int(0.89 * len(sample_list)) :]
         return train_items_form, valid_items_form, test_items_form
-        
-        
-
-
-
-        '''
-        texts_readers_df = self.meco_df[["text", "reader"]].value_counts().reset_index()
-        assert self.meco_df.shape[0] == texts_readers_df["count"].sum()
-
-        if splitting_procedure == "random_shuffle":
-            HOLD_OUT_SESSION = (3, 70)
-            self.held_out_reader = tuple((HOLD_OUT_SESSION[0], HOLD_OUT_SESSION[1], 1))
-            texts_readers_df = texts_readers_df.query(
-                f"not (text == {HOLD_OUT_SESSION[0]} and reader == {HOLD_OUT_SESSION[1]})"
-            )
-
-        item_corpus = list(texts_readers_df.itertuples(index=False, name=None))
-
-        if splitting_procedure == "random_shuffle":
-            self.rnd.shuffle(item_corpus)
-            sample_list = [
-                (idx_text, idx_reader, single_count)
-                for idx_text, idx_reader, obs_count in item_corpus
-                for single_count in range(obs_count)
-            ]
-
-            self.rnd.shuffle(sample_list)
-            train_items = sample_list[: int(0.8 * len(sample_list))]
-            valid_items = sample_list[
-                int(0.8 * len(sample_list)) : int(0.9 * len(sample_list))
-            ]
-            test_items = sample_list[int(0.9 * len(sample_list)) :]
-            return train_items, valid_items, test_items
-
-        '''

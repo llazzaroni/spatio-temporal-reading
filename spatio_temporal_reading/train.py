@@ -10,8 +10,8 @@ from spatio_temporal_reading.trainer.trainer import Trainer
 
 def main(datapath, outputpath, args):
 
-    train_ds = MecoDataset(mode="train", filtering="raw", datadir=datapath)
-    val_ds = MecoDataset(mode="valid", filtering="raw", datadir=datapath)
+    train_ds = MecoDataset(mode="train", filtering=args.filtering, datadir=datapath)
+    val_ds = MecoDataset(mode="valid", filtering=args.filtering, datadir=datapath)
 
     model_config = {
         "model_type": args.model_type,
