@@ -32,21 +32,22 @@ class Tester:
 
         with torch.no_grad():
             for i, item in enumerate(self.test_loader):
-                positions, durations, starting_times, saccades, reader_emb, features = item
+                positions, durations, starting_times, saccades, reader_emb, features, BOS_token = item
 
                 input_model = torch.cat([
-                    positions[:, 1:-1, :],
-                    durations[:, 1:-1].unsqueeze(-1),
-                    starting_times[:, 1:-1].unsqueeze(-1),
-                    reader_emb[:, 1:-1, :],
-                    features[:, 1:-1, :]],
+                    positions[:, :-1, :],
+                    durations[:, :-1].unsqueeze(-1),
+                    starting_times[:, :-1].unsqueeze(-1),
+                    reader_emb[:, :-1, :],
+                    features[:, :-1, :],
+                    BOS_token[:, :-1, :]],
                     dim=-1
                 )
 
                 weights, positions_model, saccades_model = self.model(input_model)
 
-                positions_target = positions[:, 2:, :]
-                saccades_target = saccades[:, 2:]
+                positions_target = positions[:, 1:, :]
+                saccades_target = saccades[:, 1:]
 
                 loss = NegLogLikelihood_np(
                     weights=weights,

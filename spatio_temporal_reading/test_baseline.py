@@ -45,7 +45,7 @@ def test_model(datapath, cfg, checkpoint_dir):
     test_loader = DataLoader(
         test_ds,
         batch_size=cfg.batch_size,
-        shuffle=True,
+        shuffle=False,
         collate_fn=collate_fn,
         num_workers=cfg.nworkers,
         pin_memory=True,

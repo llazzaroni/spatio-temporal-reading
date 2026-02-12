@@ -55,7 +55,7 @@ class MecoDataset(Dataset):
         elif mode == "test":
             self.items = test_items
 
-        self.d_in_saccade = 2 + 2 + len(self.reader_to_idx) + 8
+        self.d_in_saccade = 2 + 2 + len(self.reader_to_idx) + 8 + 1
 
     
     def __getitem__(self, index):
@@ -69,25 +69,33 @@ class MecoDataset(Dataset):
         # Spatial information
         # No nans in history points
         history_points = torch.tensor(subset[["dx", "dy"]].values, dtype=torch.float32)
+        zero_row = torch.zeros((1, history_points.shape[1]), dtype=torch.float32)
+        history_points = torch.cat([zero_row, history_points], dim=0)
 
         # Temporal information
         # No nans in temporal information
         dur_tensor = torch.tensor(subset["dur"].values, dtype=torch.float32)
+        dur_tensor = torch.cat([torch.zeros(1), dur_tensor], dim=0)
         start_tensor = torch.tensor(subset["start"].values, dtype=torch.float32)
+        start_tensor = torch.cat([torch.zeros(1), start_tensor], dim=0)
         sacc_tensor = torch.tensor(subset["saccade"].values, dtype=torch.float32)
+        sacc_tensor = torch.cat([torch.zeros(1), sacc_tensor], dim=0)
 
         # Reader information
         # No nans in reader information
         reader_id = subset["reader"].iloc[0]
         reader_idx = self.reader_to_idx[reader_id]
-        reader_emb = torch.zeros(len(subset), len(self.reader_to_idx), dtype=torch.float32)
+        reader_emb = torch.zeros(len(subset) + 1, len(self.reader_to_idx), dtype=torch.float32)
         reader_emb[:, reader_idx] = 1
 
         # Features
         features = torch.tensor(subset[["char_level_surp", "word_level_surprisal", "len", "freq", "char_level_surp_nan", "word_level_surprisal_nan", "len_nan", "freq_nan"]].values, dtype=torch.float32)
+        zero_row = torch.zeros((1, features.shape[1]), dtype=torch.float32)
+        features = torch.cat([zero_row, features], dim=0)
 
-
-        #result = (torch.cat([history_points, dur_tensor, reader_emb, features], dim=-1))
+        # BOS token
+        BOS_token = torch.zeros((features.shape[0], 1), dtype=torch.float32)
+        BOS_token[0] = 1
 
         return (
             history_points,
@@ -95,7 +103,8 @@ class MecoDataset(Dataset):
             start_tensor,
             sacc_tensor,
             reader_emb,
-            features
+            features,
+            BOS_token
         )
 
 

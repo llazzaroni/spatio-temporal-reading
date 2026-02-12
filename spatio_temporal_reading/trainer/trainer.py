@@ -46,24 +46,30 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 # Unpack the item
-                positions, durations, starting_times, saccades, reader_emb, features = item
+                positions, durations, starting_times, saccades, reader_emb, features, BOS_token = item
 
                 # Take the input to the model; exclude the last fixation in the scanpath
                 input_model = torch.cat([
-                    positions[:, 1:-1, :],
-                    durations[:, 1:-1].unsqueeze(-1),
-                    starting_times[:, 1:-1].unsqueeze(-1),
-                    reader_emb[:, 1:-1, :],
-                    features[:, 1:-1, :]],
+                    positions[:, :-1, :],
+                    durations[:, :-1].unsqueeze(-1),
+                    starting_times[:, :-1].unsqueeze(-1),
+                    reader_emb[:, :-1, :],
+                    features[:, :-1, :],
+                    BOS_token[:, :-1, :]],
                     dim=-1
                 )
+
+                #print(input_model[:, 0, :])
+                #print(input_model[:, 1, :])
                 
                 # Pass the input through the model
                 weights, positions_model, saccades_model = self.model(input_model)
 
                 # Find the targets; exclude the first fixation in the scanpath
-                positions_target = positions[:, 2:, :]
-                saccades_target = saccades[:, 2:]
+                positions_target = positions[:, 1:, :]
+                saccades_target = saccades[:, 1:]
+
+                #print(saccades_target)
 
                 loss = NegLogLikelihood(
                     weights=weights,
@@ -105,21 +111,22 @@ class Trainer:
 
         with torch.no_grad():
             for i, item in enumerate(self.val_loader):
-                positions, durations, starting_times, saccades, reader_emb, features = item
+                positions, durations, starting_times, saccades, reader_emb, features, BOS_token = item
 
                 input_model = torch.cat([
-                    positions[:, 1:-1, :],
-                    durations[:, 1:-1].unsqueeze(-1),
-                    starting_times[:, 1:-1].unsqueeze(-1),
-                    reader_emb[:, 1:-1, :],
-                    features[:, 1:-1, :]],
+                    positions[:, :-1, :],
+                    durations[:, :-1].unsqueeze(-1),
+                    starting_times[:, :-1].unsqueeze(-1),
+                    reader_emb[:, :-1, :],
+                    features[:, :-1, :],
+                    BOS_token[:, :-1, :]],
                     dim=-1
                 )
 
                 weights, positions_model, saccades_model = self.model(input_model)
 
-                positions_target = positions[:, 2:, :]
-                saccades_target = saccades[:, 2:]
+                positions_target = positions[:, 1:, :]
+                saccades_target = saccades[:, 1:]
 
                 loss = NegLogLikelihood(
                     weights=weights,

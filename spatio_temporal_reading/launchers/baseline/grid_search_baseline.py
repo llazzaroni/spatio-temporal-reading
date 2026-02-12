@@ -18,7 +18,7 @@ class RunConfig:
     training: str = "true"  # "true" | "false"
     final_testing: str = "true"  # "true" | "false"
     splitting_procedure: str = "random_shuffle"
-    subset: str = "true"  # "true" | "false"
+    subset: str = "false"  # "true" | "false"
     subset_size: int = 2_000
     dataset_filtering: str = "raw"  # "filtered" | "raw"
     model_type: str = "saccade"  # "saccade" | "duration"

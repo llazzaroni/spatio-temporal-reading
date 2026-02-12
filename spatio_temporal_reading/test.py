@@ -24,7 +24,7 @@ def main(datapath, args):
     test_loader = DataLoader(
         test_ds,
         batch_size=1,
-        shuffle=True,
+        shuffle=False,
         num_workers=1,
         pin_memory=True
     )

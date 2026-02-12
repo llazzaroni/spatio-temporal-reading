@@ -27,10 +27,15 @@ def include_index(meco_df, texts_df):
 
             # Append the saccades
             df_loop["saccade"] = sacc_dur
+            df_loop["saccade"].iloc[0] = df_loop["start"].iloc[0]
 
             # Append dx and dy
             df_loop["dx"] = df_loop["x"].diff(1)
             df_loop["dy"] = df_loop["y"].diff(1)
+
+            # Handle the first fixation
+            df_loop["dx"].iloc[0] = df_loop["x"].iloc[0]
+            df_loop["dy"].iloc[0] = df_loop["y"].iloc[0]
 
             # Append the character id in the rows where the fixation fell inside of the bounding box
             idx_to_char = df_text.set_index("idx")["ia_word"]

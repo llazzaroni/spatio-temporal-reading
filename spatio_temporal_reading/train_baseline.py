@@ -36,6 +36,7 @@ def select_best_checkpoint(root):
 def main(datapath, cfg, load_model, load_path):
 
     device = "cpu"
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
     logger = DummyLogger()
 
     dataset_kwargs: Dict[str, Any] = dict(
@@ -83,6 +84,7 @@ def main(datapath, cfg, load_model, load_path):
         logger=logger,
     ).to(device)
 
+    print("Model device:", next(model.parameters()).device)
 
     # Load the model   
     if load_model:
