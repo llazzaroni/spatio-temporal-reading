@@ -9,6 +9,7 @@ sys.path.append(str(project_root))
 
 from submodule.src.visuals.eval_plots import plot_llr_violins
 from submodule.eval.evalu import bootstrap_mean_difference
+import time
 
 def main(args):
     models_path = Path(args.models_path)
@@ -47,7 +48,7 @@ def main(args):
     
     if args.evaluate_models:
         losses = {}
-        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED"]
+        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW"]
         for model in models:
             model_path = models_path / model
             npy_path = model_path / "negloglikelihoods.npy"
@@ -74,7 +75,6 @@ def main(args):
             -losses["poisson_filtered_baseline"],
             N=1000,
         )
-
         eff_rme_css_bstrp_raw = bootstrap_mean_difference(
             -losses["RME_CSS_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
         )
@@ -87,6 +87,14 @@ def main(args):
         eff_hp_bstrp_raw = bootstrap_mean_difference(
             -losses["BASE_SHP_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
         )
+        '''
+        transformer_raw = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+        )
+        transformer_filtered = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED"], -losses["poisson_filtered_baseline"], N=1000, reduce=True
+        )
+
 
         plot_llr_violins(
             [
@@ -98,6 +106,8 @@ def main(args):
                 eff_css_bstrp_raw,
                 eff_rme_css_bstrp,
                 eff_rme_css_bstrp_raw,
+                transformer_filtered,
+                transformer_raw,
             ],
             labels=[
                 "Last \n Fix",
@@ -108,12 +118,42 @@ def main(args):
                 "CSS \n (Raw)",
                 "RME + CSS",
                 "RME + CSS \n (Raw)",
+                "Transf",
+                "Transf \n (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set Across Saccade Models",
             y_label="Delta Log-Likelihood Per Fixation w.r.t. Poisson",
             save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_poisson.png",
             fig_size=(9, 6),
         )
+
+        '''
+        
+        transformer_raw_rme = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW"], -losses["RME_CSS_RAW"], N=1000, reduce=True
+        )
+        transformer_filtered_rme = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED"], -losses["RME_CSS_FILTERED"], N=1000, reduce=True
+        )
+
+        plot_llr_violins(
+            [
+                transformer_filtered_rme,
+                transformer_raw_rme
+            ],
+            labels=[
+                "Transf",
+                "Transf \n (Raw)"
+            ],
+            title="Bootstrap Estimates of Log-Likelihood Gains on Test Set Across Saccade Models (Extended)",
+            y_label="Delta Log-Likelihood Per Fixation w.r.t. RSE model",
+            save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_rse_extended.png",
+            fig_size=(10, 6),
+            step=0.25,
+            dpi=1200,
+        )
+
+
         '''
         eff_dur_raw = bootstrap_mean_difference(
             -losses["RME_CSS_DUR_RAW"], -losses["RME_CSS_RAW"], N=1000, reduce=True
@@ -285,5 +325,5 @@ if __name__ == "__main__":
 '''
 python losses.py --models-path "/Users/lorenzolazzaroni/Documents/Programming/Python/Research in DS/spatio-temporal-reading-proj/data" --models RME_CSS_WS_FILTERED RME_CSS_WS_RAW BASE_LF_RAW BASE_SHP_RAW CSS_RAW poisson_raw_baseline RME_CSS_CHAR_LEN_FREQ_RAW RME_CSS_CHAR_WORD_LEN_FREQ_RAW RME_CSS_CS_RAW RME_CSS_DUR_RAW RME_CSS_FREQ_RAW RME_CSS_LEN_FREQ_RAW RME_CSS_LEN_RAW RME_CSS_RAW RME_CSS_WORD_LEN_FREQ_RAW RME_CSS_WS_RAW BASE_LF_FILTERED BASE_SHP_FILTERED CSS_FILTERED poisson_filtered_baseline RME_CSS_CHAR_LEN_FREQ_FILTERED RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED RME_CSS_CS_FILTERED RME_CSS_DUR_FILTERED RME_CSS_FREQ_FILTERED RME_CSS_LEN_FREQ_FILTERED RME_CSS_LEN_FILTERED RME_CSS_FILTERED RME_CSS_WORD_LEN_FREQ_FILTERED RME_CSS_WS_FILTERED TRANSFORMER_FILTERED TRANSFORMER_RAW
 python losses.py --models-path "/Users/lorenzolazzaroni/Documents/Programming/Python/Research in DS/spatio-temporal-reading-proj/data" --models TRANSFORMER_RAW RME_CSS_LEN_FREQ_RAW --plot-distributions
-python losses_baseline.py --models-path "/Users/lorenzolazzaroni/Documents/Programming/Python/Research in DS/spatio-temporal-reading-proj/data" --evaluate-models
+python losses.py --models-path "/Users/lorenzolazzaroni/Documents/Programming/Python/Research in DS/spatio-temporal-reading-proj/data" --evaluate-models
 '''
