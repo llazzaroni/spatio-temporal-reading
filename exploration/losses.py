@@ -48,7 +48,7 @@ def main(args):
     
     if args.evaluate_models:
         losses = {}
-        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW"]
+        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW", "TRANSFORMER_FILTERED_LM"]
         for model in models:
             model_path = models_path / model
             npy_path = model_path / "negloglikelihoods.npy"
@@ -135,15 +135,25 @@ def main(args):
         transformer_filtered_rme = bootstrap_mean_difference(
             -losses["TRANSFORMER_FILTERED"], -losses["RME_CSS_FILTERED"], N=1000, reduce=True
         )
+        #transformer_raw_lm = bootstrap_mean_difference(
+        #    -losses["TRANSFORMER_RAW_LM"], -losses["RME_CSS_RAW"], N=1000, reduce=True
+        #)
+        transformer_filtered_lm = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED_LM"], -losses["RME_CSS_FILTERED"], N=1000, reduce=True
+        )
 
         plot_llr_violins(
             [
                 transformer_filtered_rme,
-                transformer_raw_rme
+                transformer_raw_rme,
+                transformer_filtered_lm,
+                #transformer_raw_lm
             ],
             labels=[
                 "Transf",
-                "Transf \n (Raw)"
+                "Transf \n (Raw)",
+                "Transf LM",
+                #"Transf LM \n (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set Across Saccade Models (Extended)",
             y_label="Delta Log-Likelihood Per Fixation w.r.t. RSE model",
@@ -152,6 +162,29 @@ def main(args):
             step=0.25,
             dpi=1200,
         )
+
+        transformer_filtered_lm_rme = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED_LM"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
+        )
+
+        plot_llr_violins(
+            [
+                transformer_filtered_lm_rme,
+                #transformer_raw_lm
+            ],
+            labels=[
+                "Transf LM",
+                #"Transf LM \n (Raw)"
+            ],
+            title="Bootstrap Estimates of Log-Likelihood Gains on Test Set Across Saccade Models (Extended)",
+            y_label="Delta Log-Likelihood Per Fixation w.r.t. RSE model",
+            save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_rse_LM_extended.png",
+            fig_size=(10, 6),
+            step=0.25,
+            dpi=1200,
+        )
+
+        
 
 
         '''
