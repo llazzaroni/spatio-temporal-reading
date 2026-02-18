@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 def include_index(meco_df, texts_df):
 
@@ -34,8 +36,8 @@ def include_index(meco_df, texts_df):
             df_loop["dy"] = df_loop["y"].diff(1)
 
             # Handle the first fixation
-            df_loop["dx"].iloc[0] = df_loop["x"].iloc[0]
-            df_loop["dy"].iloc[0] = df_loop["y"].iloc[0]
+            df_loop.loc[df_loop.index[0], "dx"] = df_loop.loc[df_loop.index[0], "x"]
+            df_loop.loc[df_loop.index[0], "dy"] = df_loop.loc[df_loop.index[0], "y"]
 
             # Append the character id in the rows where the fixation fell inside of the bounding box
             idx_to_char = df_text.set_index("idx")["ia_word"]
@@ -432,4 +434,81 @@ def final(meco_df, texts_df):
     
     return out
 
+def hidden_states(texts_df):
 
+    # Texts are already ordered (should be)
+    text_indices = texts_df["text_id"].unique()
+    encodings_list = []
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    model_gpt = AutoModel.from_pretrained("gpt2")
+
+    dfs = []
+
+    for text_id in text_indices:
+        text_df = texts_df[texts_df["text_id"] == text_id].copy()
+
+        text_df["token_id"] = 0
+        token_id = 0
+        words = []
+        current_word = ""
+        for i in range(len(text_df)):
+            char = text_df["character"].iloc[i]
+            text_df.loc[text_df.index[i], "token_id"] = token_id
+            if char != " ":
+                current_word += char
+            else:
+                words.append(current_word)
+                current_word = ""
+                token_id += 1
+
+            if i == len(text_df) - 1:
+                words.append(current_word)
+
+        dfs.append(text_df)
+
+        model_gpt.eval()
+
+        all_ids = []
+        word_token_spans = []
+        for i, w in enumerate(words):
+            w_text = w if i == 0 else " " + w
+            ids = tokenizer.encode(w_text, add_special_tokens=False)
+            start = len(all_ids)
+            all_ids.extend(ids)
+            end = len(all_ids) - 1
+            word_token_spans.append((start, end))
+
+        input_ids = torch.tensor([all_ids])
+
+        with torch.no_grad():
+            out = model_gpt(input_ids=input_ids, output_hidden_states=True, use_cache=False)
+            H = out.hidden_states[-1][0]
+
+        # prefix encoding at each word boundary = hidden state at last subtoken of that word
+        word_states = [H[end] for (start, end) in word_token_spans]
+
+        word_states_np = torch.stack(word_states).cpu().numpy()
+        print(word_states_np.shape[0])
+        encodings_list.append(word_states_np)
+
+    df_token_index = pd.concat(dfs)
+
+    max_len = max(arr.shape[0] for arr in encodings_list)
+    padded = np.zeros((len(encodings_list), max_len, 768))
+    for i, seq in enumerate((encodings_list)):
+        L = seq.shape[0]
+        padded[i, :L, :] = seq
+
+    return df_token_index, padded
+
+def include_tokens_indices(df_token_indices, meco_df):
+    meco_df["token_index"] = 0
+    for i in range(len(meco_df)):
+        if pd.isna(meco_df.loc[meco_df.index[i], "ianum_word"]):
+            meco_df.loc[meco_df.index[i], "token_index"] = -1
+        else:
+            char_idx = int(meco_df.loc[meco_df.index[i], "char_idx"])
+            text_id = int(meco_df.loc[meco_df.index[i], "text"])
+            token_index = df_token_indices[(df_token_indices["idx"] == char_idx) & (df_token_indices["text_id"] == text_id)]["token_id"].iloc[0]
+            meco_df.loc[meco_df.index[i], "token_index"] = token_index
+    return meco_df

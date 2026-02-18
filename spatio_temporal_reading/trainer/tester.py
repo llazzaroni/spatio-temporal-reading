@@ -2,8 +2,7 @@ import torch
 import numpy as np
 import json
 
-from spatio_temporal_reading.loss.loss import NegLogLikelihood
-from spatio_temporal_reading.loss.loss import NegLogLikelihood_np
+from spatio_temporal_reading.loss.loss import NegLogLikelihood, NegLogLikelihood_np, NegLogLikelihoodCov_np
 
 class Tester:
 
@@ -11,10 +10,12 @@ class Tester:
             self,
             test_loader,
             model,
-            datapath
+            datapath,
+            device="cpu"
     ):
         self.test_loader = test_loader
         self.model = model
+        self.device = device
 
         with open(datapath / "variances.json", "r") as f:
             variances = json.load(f)
@@ -23,8 +24,8 @@ class Tester:
         var_y = variances["var_y"]
         var_sacc = variances["var_sacc"]
 
-        self.var_pos = torch.tensor([[var_x, 0], [0, var_y]])
-        self.std_sacc = torch.tensor([np.sqrt(var_sacc)])
+        self.var_pos = torch.tensor([[var_x, 0], [0, var_y]], device=self.device)
+        self.std_sacc = torch.tensor([np.sqrt(var_sacc)], device=self.device)
 
 
     def test(self):
@@ -32,22 +33,12 @@ class Tester:
 
         with torch.no_grad():
             for i, item in enumerate(self.test_loader):
-                positions, durations, starting_times, saccades, reader_emb, features, BOS_token = item
-
-                input_model = torch.cat([
-                    positions[:, :-1, :],
-                    durations[:, :-1].unsqueeze(-1),
-                    starting_times[:, :-1].unsqueeze(-1),
-                    reader_emb[:, :-1, :],
-                    features[:, :-1, :],
-                    BOS_token[:, :-1, :]],
-                    dim=-1
-                )
+                input_model, positions_target, saccades_target = item
+                input_model = input_model.to(self.device)
+                positions_target = positions_target.to(self.device)
+                saccades_target = saccades_target.to(self.device)
 
                 weights, positions_model, saccades_model = self.model(input_model)
-
-                positions_target = positions[:, 1:, :]
-                saccades_target = saccades[:, 1:]
 
                 loss = NegLogLikelihood_np(
                     weights=weights,
@@ -64,3 +55,30 @@ class Tester:
         losses_np = np.concatenate(losses)
         return losses_np
             
+class TesterCov(Tester):
+    def test(self):
+        losses = []
+
+        with torch.no_grad():
+            for i, item in enumerate(self.test_loader):
+                input_model, positions_target, saccades_target = item
+                input_model = input_model.to(self.device)
+                positions_target = positions_target.to(self.device)
+                saccades_target = saccades_target.to(self.device)
+
+                weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
+
+                loss = NegLogLikelihoodCov_np(
+                    covariances2D=covariances2D,
+                    covariancesSacc=covariancesSacc,
+                    weights=weights,
+                    positions_model=positions_model,
+                    saccades_model=saccades_model,
+                    positions=positions_target,
+                    saccades=saccades_target
+                )
+
+                losses.append(loss)
+
+        losses_np = np.concatenate(losses)
+        return losses_np

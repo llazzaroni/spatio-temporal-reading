@@ -1,8 +1,9 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, Cov2DHead, CovSaccHead
+from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead
+import torch
 
 
-class SimpleModel(nn.Module):
+class SimpleModelLM(nn.Module):
     def __init__(
             self,
             model_type,
@@ -36,11 +37,13 @@ class SimpleModel(nn.Module):
         # First embedding
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
+        # Project the gpt-2 embeddings onto a lower-dimensional space
+        self.gptProjector = gptProjector()
+
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)
         self.attention_layers = nn.ModuleList([
-            #TransformerBlockMultiHeadAttn(self.d_model, self.H)
-            TransformerBlock(self.d_model)
+            TransformerBlockMultiHeadAttn(self.d_model, self.H)
             for _ in range(self.n_layers)
         ])
 
@@ -52,6 +55,7 @@ class SimpleModel(nn.Module):
 
         # Positional encoding
         self.positional_enc = PositionalEncoding(self.d_model, self.max_len)
+
     
     def initialize_submodules_duration(self):
         raise NotImplementedError
@@ -59,7 +63,20 @@ class SimpleModel(nn.Module):
     
     def forward_saccades(self, x):
         # Input of dimension (n_batches, len_sequence, d_in)
-        embeddings = self.input_proj(x) # (n_batches, len_sequence, d_model)
+        empty_fix = x[:, :, -1]
+        lm_emb = x[:, :, -1-768:-1]
+        BOS = x[:, :, -2-768]
+        features = x[:, :, :-2-768]
+
+        gpt_emb = self.gptProjector(lm_emb)
+        gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1) * (1 - BOS).unsqueeze(-1)
+
+        input_before_embedding = torch.cat(
+            [features, BOS.unsqueeze(-1), gpt_emb, empty_fix.unsqueeze(-1)],
+            dim=-1
+        )
+
+        embeddings = self.input_proj(input_before_embedding) # (n_batches, len_sequence, d_model)
 
         #embeddings = self.positional_enc.forward(embeddings)
 
@@ -88,18 +105,20 @@ class SimpleModel(nn.Module):
         else:
             return self.forward_durations(x)
         
-class TransformerCov(SimpleModel):
+class TransformerCovLM(SimpleModelLM):
     def initialize_submodules_saccade(self):
         # Input of dimension (n_batches, len_sequence, d_in)
 
         # First embedding
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
+        # Project the gpt-2 embeddings onto a lower-dimensional space
+        self.gptProjector = gptProjector()
+
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)
         self.attention_layers = nn.ModuleList([
-            #TransformerBlockMultiHeadAttn(self.d_model, self.H)
-            TransformerBlock(self.d_model)
+            TransformerBlockMultiHeadAttn(self.d_model, self.H)
             for _ in range(self.n_layers)
         ])
 
@@ -112,13 +131,26 @@ class TransformerCov(SimpleModel):
         # Positional encoding
         self.positional_enc = PositionalEncoding(self.d_model, self.max_len)
 
-        # Obtain the covariance matrix
         self.get_cov2D = Cov2DHead(self.d_model, self.n_admixture_components)
         self.get_covsacc = CovSaccHead(self.d_model, self.n_admixture_components)
 
+    
     def forward_saccades(self, x):
         # Input of dimension (n_batches, len_sequence, d_in)
-        embeddings = self.input_proj(x) # (n_batches, len_sequence, d_model)
+        empty_fix = x[:, :, -1]
+        lm_emb = x[:, :, -1-768:-1]
+        BOS = x[:, :, -2-768]
+        features = x[:, :, :-2-768]
+
+        gpt_emb = self.gptProjector(lm_emb)
+        gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1) * (1 - BOS).unsqueeze(-1)
+
+        input_before_embedding = torch.cat(
+            [features, BOS.unsqueeze(-1), gpt_emb, empty_fix.unsqueeze(-1)],
+            dim=-1
+        )
+
+        embeddings = self.input_proj(input_before_embedding) # (n_batches, len_sequence, d_model)
 
         #embeddings = self.positional_enc.forward(embeddings)
 
@@ -137,5 +169,5 @@ class TransformerCov(SimpleModel):
         covariances2D = self.get_cov2D(hidden_states) # (n_batches, len_sequence, n_admixture_components, 2, 2)
         covariancesSacc = self.get_covsacc(hidden_states) # (n_batches, len_sequence, n_admixture_components)
 
+
         return weights, positions, saccades, covariances2D, covariancesSacc
-    

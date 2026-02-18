@@ -97,14 +97,23 @@ class MecoDataset(Dataset):
         BOS_token = torch.zeros((features.shape[0], 1), dtype=torch.float32)
         BOS_token[0] = 1
 
+        input_model = torch.cat([
+            history_points[:-1, :],
+            dur_tensor[:-1].unsqueeze(-1),
+            start_tensor[:-1].unsqueeze(-1),
+            reader_emb[:-1, :],
+            features[:-1, :],
+            BOS_token[:-1, :]],
+            dim=-1
+        )
+
+        positions_target = history_points[1:, :]
+        saccades_target = sacc_tensor[1:]
+
         return (
-            history_points,
-            dur_tensor,
-            start_tensor,
-            sacc_tensor,
-            reader_emb,
-            features,
-            BOS_token
+            input_model,
+            positions_target,
+            saccades_target
         )
 
 

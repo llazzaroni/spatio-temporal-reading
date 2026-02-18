@@ -49,11 +49,14 @@ def main(args):
             datapath=datapath,
             args=args
         )
+    if args.include_tokens:
+        data.include_tokens(datapath)
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--include-indices", default=False, action="store_true")
+    p.add_argument("--include-tokens", default=False, action="store_true")
     p.add_argument("--augment-fixation", default=False, action="store_true")
     p.add_argument("--make-plots", default=False, action="store_true")
     p.add_argument("--train", default=False, action="store_true")
@@ -64,6 +67,7 @@ if __name__ == "__main__":
     p.add_argument("--model-type", type=str, default="saccade")
     p.add_argument("--n-layers", type=int, default=3)
     p.add_argument("--d-model", type=int, default=30)
+    p.add_argument("--heads", type=int, default=5)
     p.add_argument("--n-components", type=int, default=20)
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--data")
@@ -73,5 +77,7 @@ if __name__ == "__main__":
     p.add_argument("--test", default=False, action="store_true")
     p.add_argument("--test-baseline", default=False, action="store_true")
     p.add_argument("--models-path")
+    p.add_argument("--augment", default=False, action="store_true")
+    p.add_argument("--cov", default=False, action="store_true")
     args = p.parse_args()
     main(args)
