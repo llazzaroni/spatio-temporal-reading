@@ -18,6 +18,7 @@ def get_device():
     return "cpu"
 
 def main(datapath, outputpath, args):
+    device = get_device()
 
     if not args.augment:
         train_ds = MecoDataset(mode="train", filtering=args.filtering, datadir=datapath)
@@ -40,23 +41,24 @@ def main(datapath, outputpath, args):
         "H": args.heads
     }
 
+    dataloader_kwargs = dict(
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        pin_memory=(device == "cuda"),
+        persistent_workers=(args.num_workers > 0),
+    )
+
     train_loader = DataLoader(
         train_ds,
-        batch_size=1,
         shuffle=True,
-        num_workers=1,
-        pin_memory=True
+        **dataloader_kwargs,
     )
 
     val_loader = DataLoader(
         val_ds,
-        batch_size=1,
         shuffle=False,
-        num_workers=1,
-        pin_memory=True
+        **dataloader_kwargs,
     )
-
-    device = get_device()
 
     if not args.augment:
         if args.cov:
@@ -115,8 +117,30 @@ def main(datapath, outputpath, args):
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     if args.cov:
-        trainer = TrainerCov(train_loader, val_loader, args.epochs, model, optimizer, datapath, outputpath, model_config, device=device)
+        trainer = TrainerCov(
+            train_loader,
+            val_loader,
+            args.epochs,
+            model,
+            optimizer,
+            datapath,
+            outputpath,
+            model_config,
+            device=device,
+            use_amp=args.amp,
+        )
     else:
-        trainer = Trainer(train_loader, val_loader, args.epochs, model, optimizer, datapath, outputpath, model_config, device=device)
+        trainer = Trainer(
+            train_loader,
+            val_loader,
+            args.epochs,
+            model,
+            optimizer,
+            datapath,
+            outputpath,
+            model_config,
+            device=device,
+            use_amp=args.amp,
+        )
 
     trainer.train()

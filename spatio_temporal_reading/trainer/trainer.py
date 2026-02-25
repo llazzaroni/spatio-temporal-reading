@@ -16,7 +16,8 @@ class Trainer:
             datapath,
             outputpath,
             config,
-            device="cpu"
+            device="cpu",
+            use_amp=False,
     ):
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -27,6 +28,9 @@ class Trainer:
         self.outputpath = outputpath
         self.config = config
         self.device = device
+        self.use_amp = bool(use_amp and device == "cuda")
+        self.non_blocking = device == "cuda"
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         with open(datapath / "variances.json", "r") as f:
             variances = json.load(f)
 
@@ -44,32 +48,36 @@ class Trainer:
         for epoch in range(self.epochs):
             losses_epoch = []
             for i, item in enumerate(self.train_loader):
-
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
                 # Unpack the item
                 input_model, positions_target, saccades_target = item
-                input_model = input_model.to(self.device)
-                positions_target = positions_target.to(self.device)
-                saccades_target = saccades_target.to(self.device)
+                input_model = input_model.to(self.device, non_blocking=self.non_blocking)
+                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
+                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                weights, positions_model, saccades_model = self.model(input_model)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    weights, positions_model, saccades_model = self.model(input_model)
 
-                loss = NegLogLikelihood(
-                    weights=weights,
-                    positions_model=positions_model,
-                    saccades_model=saccades_model,
-                    positions=positions_target,
-                    saccades=saccades_target,
-                    cov_pos=self.var_pos,
-                    std_sacc=self.std_sacc
-                )
+                    loss = NegLogLikelihood(
+                        weights=weights,
+                        positions_model=positions_model,
+                        saccades_model=saccades_model,
+                        positions=positions_target,
+                        saccades=saccades_target,
+                        cov_pos=self.var_pos,
+                        std_sacc=self.std_sacc
+                    )
 
                 losses_epoch.append(loss.item() / positions_model.shape[1])
 
-                loss.backward()
-
-                self.optimizer.step()
+                if self.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
 
             print(f"reached epoch {epoch}")
 
@@ -96,21 +104,22 @@ class Trainer:
         with torch.no_grad():
             for i, item in enumerate(self.val_loader):
                 input_model, positions_target, saccades_target = item
-                input_model = input_model.to(self.device)
-                positions_target = positions_target.to(self.device)
-                saccades_target = saccades_target.to(self.device)
+                input_model = input_model.to(self.device, non_blocking=self.non_blocking)
+                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
+                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                weights, positions_model, saccades_model = self.model(input_model)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    weights, positions_model, saccades_model = self.model(input_model)
 
-                loss = NegLogLikelihood(
-                    weights=weights,
-                    positions_model=positions_model,
-                    saccades_model=saccades_model,
-                    positions=positions_target,
-                    saccades=saccades_target,
-                    cov_pos=self.var_pos,
-                    std_sacc=self.std_sacc
-                )
+                    loss = NegLogLikelihood(
+                        weights=weights,
+                        positions_model=positions_model,
+                        saccades_model=saccades_model,
+                        positions=positions_target,
+                        saccades=saccades_target,
+                        cov_pos=self.var_pos,
+                        std_sacc=self.std_sacc
+                    )
 
                 losses.append(loss.item() / positions_model.shape[1])
 
@@ -124,32 +133,36 @@ class TrainerCov(Trainer):
         for epoch in range(self.epochs):
             losses_epoch = []
             for i, item in enumerate(self.train_loader):
-
-                self.optimizer.zero_grad()
+                self.optimizer.zero_grad(set_to_none=True)
 
                 # Unpack the item
                 input_model, positions_target, saccades_target = item
-                input_model = input_model.to(self.device)
-                positions_target = positions_target.to(self.device)
-                saccades_target = saccades_target.to(self.device)
+                input_model = input_model.to(self.device, non_blocking=self.non_blocking)
+                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
+                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
 
-                loss = NegLogLikelihoodCov(
-                    covariances2D=covariances2D,
-                    covariancesSacc=covariancesSacc,
-                    weights=weights,
-                    positions_model=positions_model,
-                    saccades_model=saccades_model,
-                    positions=positions_target,
-                    saccades=saccades_target
-                )
+                    loss = NegLogLikelihoodCov(
+                        covariances2D=covariances2D,
+                        covariancesSacc=covariancesSacc,
+                        weights=weights,
+                        positions_model=positions_model,
+                        saccades_model=saccades_model,
+                        positions=positions_target,
+                        saccades=saccades_target
+                    )
 
                 losses_epoch.append(loss.item() / positions_model.shape[1])
 
-                loss.backward()
-
-                self.optimizer.step()
+                if self.use_amp:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    self.optimizer.step()
 
             print(f"reached epoch {epoch}")
 
@@ -176,21 +189,22 @@ class TrainerCov(Trainer):
         with torch.no_grad():
             for i, item in enumerate(self.val_loader):
                 input_model, positions_target, saccades_target = item
-                input_model = input_model.to(self.device)
-                positions_target = positions_target.to(self.device)
-                saccades_target = saccades_target.to(self.device)
+                input_model = input_model.to(self.device, non_blocking=self.non_blocking)
+                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
+                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
+                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                    weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
 
-                loss = NegLogLikelihoodCov(
-                    covariances2D=covariances2D,
-                    covariancesSacc=covariancesSacc,
-                    weights=weights,
-                    positions_model=positions_model,
-                    saccades_model=saccades_model,
-                    positions=positions_target,
-                    saccades=saccades_target
-                )
+                    loss = NegLogLikelihoodCov(
+                        covariances2D=covariances2D,
+                        covariancesSacc=covariancesSacc,
+                        weights=weights,
+                        positions_model=positions_model,
+                        saccades_model=saccades_model,
+                        positions=positions_target,
+                        saccades=saccades_target
+                    )
 
                 losses.append(loss.item() / positions_model.shape[1])
 
