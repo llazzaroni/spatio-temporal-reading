@@ -17,6 +17,13 @@ class DummyLogger:
     def info(self, *args, **kwargs):
         pass
 
+def get_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
 def select_best_checkpoint(root):
     best = None
     best_loss = float("inf")
@@ -35,8 +42,7 @@ def select_best_checkpoint(root):
 
 def main(datapath, cfg, load_model, load_path):
 
-    device = "cpu"
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    device = get_device()
     logger = DummyLogger()
 
     dataset_kwargs: Dict[str, Any] = dict(
