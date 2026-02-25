@@ -13,3 +13,4 @@ source /cluster/scratch/llazzaroni/miniconda3/etc/profile.d/conda.sh
 conda activate base
 
 python /cluster/home/llazzaroni/spatio-temporal-reading/main.py --train-baseline --data "/cluster/scratch/llazzaroni/spatio-temporal-reading-data"
+

@@ -11,6 +11,10 @@ from spatio_temporal_reading.loss.loss import NegLogLikelihood
 from spatio_temporal_reading.trainer.trainer import Trainer, TrainerCov
 
 def get_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
     return "cpu"
 
 def main(datapath, outputpath, args):

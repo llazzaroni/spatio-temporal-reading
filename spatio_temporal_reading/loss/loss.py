@@ -77,7 +77,7 @@ def NegLogLikelihood_np(
 
     neg_log_prob = -log_prob
     neg_log_prob_flattened = neg_log_prob.reshape(-1)
-    neg_log_prob_np = neg_log_prob_flattened.numpy()
+    neg_log_prob_np = neg_log_prob_flattened.detach().cpu().numpy()
 
     return neg_log_prob_np
 
@@ -155,6 +155,6 @@ def NegLogLikelihoodCov_np(
 
     neg_log_prob = -log_prob
     neg_log_prob_flattened = neg_log_prob.reshape(-1)
-    neg_log_prob_np = neg_log_prob_flattened.numpy()
+    neg_log_prob_np = neg_log_prob_flattened.detach().cpu().numpy()
 
     return neg_log_prob_np
