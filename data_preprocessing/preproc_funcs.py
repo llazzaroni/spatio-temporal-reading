@@ -29,7 +29,7 @@ def include_index(meco_df, texts_df):
 
             # Append the saccades
             df_loop["saccade"] = sacc_dur
-            df_loop["saccade"].iloc[0] = df_loop["start"].iloc[0]
+            df_loop.loc[df_loop.index[0], "saccade"] = df_loop.loc[df_loop.index[0], "start"]
 
             # Append dx and dy
             df_loop["dx"] = df_loop["x"].diff(1)
