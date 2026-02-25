@@ -195,5 +195,3 @@ class TrainerCov(Trainer):
                 losses.append(loss.item() / positions_model.shape[1])
 
         return np.array(losses).mean()
-
-            

@@ -79,5 +79,6 @@ if __name__ == "__main__":
     p.add_argument("--models-path")
     p.add_argument("--augment", default=False, action="store_true")
     p.add_argument("--cov", default=False, action="store_true")
+    p.add_argument("--conv", default=False, action="store_true")
     args = p.parse_args()
     main(args)

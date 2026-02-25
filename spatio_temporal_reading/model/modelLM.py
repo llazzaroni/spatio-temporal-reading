@@ -1,5 +1,5 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead
+from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead, gptProjector_conv
 import torch
 
 
@@ -141,8 +141,76 @@ class TransformerCovLM(SimpleModelLM):
         lm_emb = x[:, :, -1-768:-1]
         BOS = x[:, :, -2-768]
         features = x[:, :, :-2-768]
-
+        
         gpt_emb = self.gptProjector(lm_emb)
+        gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1) * (1 - BOS).unsqueeze(-1)
+
+        input_before_embedding = torch.cat(
+            [features, BOS.unsqueeze(-1), gpt_emb, empty_fix.unsqueeze(-1)],
+            dim=-1
+        )
+
+        embeddings = self.input_proj(input_before_embedding) # (n_batches, len_sequence, d_model)
+
+        #embeddings = self.positional_enc.forward(embeddings)
+
+        # Go through the attention layers
+        hidden_states = embeddings
+        for attention_layer in self.attention_layers:
+            hidden_states = attention_layer(hidden_states) # (n_batches, len_sequence, d_model)
+
+        weights_scores = self.get_weights(hidden_states) # (n_batches, len_sequence, n_admixture_components)
+        weights = weights_scores.softmax(dim=-1)
+        positions = self.get_positions(hidden_states) # (n_batches, len_sequence, n_admixture_components * 2)
+        B, T, _ = positions.shape
+        K = self.n_admixture_components
+        positions = positions.view(B, T, K, 2)
+        saccades = self.get_saccades(hidden_states) # (n_batches, len_sequence, n_admixture_components)
+        covariances2D = self.get_cov2D(hidden_states) # (n_batches, len_sequence, n_admixture_components, 2, 2)
+        covariancesSacc = self.get_covsacc(hidden_states) # (n_batches, len_sequence, n_admixture_components)
+
+
+        return weights, positions, saccades, covariances2D, covariancesSacc
+    
+
+class TransformerCovLM_conv(TransformerCovLM):
+    def initialize_submodules_saccade(self):
+        # Input of dimension (n_batches, len_sequence, d_in)
+
+        # First embedding
+        self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
+
+        # Project the gpt-2 embeddings onto a lower-dimensional space
+        self.gptProjector = gptProjector_conv()
+
+        # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
+        # Then attention (keep it one-headed)
+        self.attention_layers = nn.ModuleList([
+            TransformerBlockMultiHeadAttn(self.d_model, self.H)
+            for _ in range(self.n_layers)
+        ])
+
+        # Finally, obtain the parameters of the distribution
+        # Output of the model of dimension (n_batches, len_sequence, d_model)
+        self.get_weights = nn.Linear(in_features=self.d_model, out_features=self.n_admixture_components)
+        self.get_positions = nn.Linear(in_features=self.d_model, out_features = self.n_admixture_components * 2)
+        self.get_saccades = nn.Linear(in_features=self.d_model, out_features=self.n_admixture_components)
+
+        # Positional encoding
+        self.positional_enc = PositionalEncoding(self.d_model, self.max_len)
+
+        self.get_cov2D = Cov2DHead(self.d_model, self.n_admixture_components)
+        self.get_covsacc = CovSaccHead(self.d_model, self.n_admixture_components)
+
+    def forward_saccades(self, x):
+        # Input of dimension (n_batches, len_sequence, d_in)
+        ctx_valid = x[:, :, -3:]
+        lm_emb_flat = x[:, :, -(768*3 + 3):-3]
+        empty_fix = x[:, :, -(768*3 + 3)-1]
+        BOS = x[:, :, -(768*3 + 3)-2]
+        features = x[:, :, :-(768*3 + 3)-2]
+        
+        gpt_emb = self.gptProjector(lm_emb_flat, ctx_valid)
         gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1) * (1 - BOS).unsqueeze(-1)
 
         input_before_embedding = torch.cat(
