@@ -135,10 +135,9 @@ class gptProjector_conv(nn.Module):
     def __init__(self, context_size=7):
         super().__init__()
         self.context_size = context_size
-        self.conv1 = nn.Conv1d(768, 384, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(384, 128, kernel_size=3, padding=1)
-        self.linear1 = nn.Linear(128, 23)
-        self.linear2 = nn.Linear(23, 4)
+        self.conv = nn.Conv1d(768, 768, kernel_size=3, padding=1)
+        self.linear1 = nn.Linear(768, 64)
+        self.linear2 = nn.Linear(64, 4)
         self.act = nn.GELU()
 
     def forward(self, lm_emb_flat, ctx_valid):
@@ -148,10 +147,8 @@ class gptProjector_conv(nn.Module):
 
         mask = ctx_valid.reshape(B * T, 1, self.context_size)
 
-        x = self.conv1(lm_emb)
-        x = self.act(x)
-        x = self.conv2(x)
-        x = self.act(x)
+        x = lm_emb * mask
+        x = self.conv(x)
         x = x * mask
         div = mask.sum(dim=-1).clamp_min(1.0)
         x = x.sum(dim=-1) / div
