@@ -143,6 +143,8 @@ class MecoDatasetLM(MecoDataset):
         )
     
 class MecoDatasetLM_conv(MecoDatasetLM):
+    CONTEXT_WINDOW = 3
+
     def __getitem__(self, index):
         item = self.items[index]
 
@@ -227,7 +229,7 @@ class MecoDatasetLM_conv(MecoDatasetLM):
         N = emb_indices.shape[0]
         T_text, d = text_specific_embeddings.shape
 
-        offsets = np.arange(-1, 2, dtype=np.int64)
+        offsets = np.arange(-self.CONTEXT_WINDOW, self.CONTEXT_WINDOW + 1, dtype=np.int64)
         ctx_idx = emb_indices[:, None] + offsets[None, :]
 
         center_valid = emb_indices >= 0

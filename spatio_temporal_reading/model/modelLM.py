@@ -204,11 +204,15 @@ class TransformerCovLM_conv(TransformerCovLM):
 
     def forward_saccades(self, x):
         # Input of dimension (n_batches, len_sequence, d_in)
-        ctx_valid = x[:, :, -3:]
-        lm_emb_flat = x[:, :, -(768*3 + 3):-3]
-        empty_fix = x[:, :, -(768*3 + 3)-1]
-        BOS = x[:, :, -(768*3 + 3)-2]
-        features = x[:, :, :-(768*3 + 3)-2]
+        ctx_size = self.gptProjector.context_size
+        lm_width = 768 * ctx_size
+        tail_width = lm_width + ctx_size
+
+        ctx_valid = x[:, :, -ctx_size:]
+        lm_emb_flat = x[:, :, -(tail_width):-(ctx_size)]
+        empty_fix = x[:, :, -(tail_width) - 1]
+        BOS = x[:, :, -(tail_width) - 2]
+        features = x[:, :, :-(tail_width) - 2]
         
         gpt_emb = self.gptProjector(lm_emb_flat, ctx_valid)
         gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1) * (1 - BOS).unsqueeze(-1)
