@@ -239,7 +239,7 @@ class MecoDatasetLM_conv(MecoDatasetLM):
             & (ctx_idx < T_text)
         )
 
-        lm_emb = np.zeros((N, d, 3), dtype=text_specific_embeddings.dtype)
+        lm_emb = np.zeros((N, d, offsets.shape[0]), dtype=text_specific_embeddings.dtype)
         rows, cols = np.nonzero(ctx_valid)
         lm_emb[rows, :, cols] = text_specific_embeddings[ctx_idx[rows, cols]]
 
