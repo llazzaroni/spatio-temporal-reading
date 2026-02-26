@@ -48,7 +48,7 @@ def main(args):
     
     if args.evaluate_models:
         losses = {}
-        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW", "TRANSFORMER_FILTERED_HEADS", "TRANSFORMER_RAW_HEADS", "TRANSFORMER_FILTERED_LM", "TRANSFORMER_RAW_LM", "TRANSFORMER_FILTERED_COV", "TRANSFORMER_RAW_COV", "TRANSFORMER_FILTERED_COV_LM", "TRANSFORMER_RAW_COV_LM", "TRANSFORMER_FILTERED_LM_COV_CONV2"]
+        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW", "TRANSFORMER_FILTERED_HEADS", "TRANSFORMER_RAW_HEADS", "TRANSFORMER_FILTERED_LM", "TRANSFORMER_RAW_LM", "TRANSFORMER_FILTERED_COV", "TRANSFORMER_RAW_COV", "TRANSFORMER_FILTERED_COV_LM", "TRANSFORMER_RAW_COV_LM", "TRANSFORMER_FILTERED_COV_CONV_LM", "TRANSFORMER_RAW_COV_CONV_LM"]
         for model in models:
             model_path = models_path / model
             npy_path = model_path / "negloglikelihoods.npy"
@@ -176,7 +176,10 @@ def main(args):
             -losses["TRANSFORMER_RAW_COV_LM"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
         )
         transformer_filtered_cov_lm_conv = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_LM_COV_CONV2"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
+            -losses["TRANSFORMER_FILTERED_COV_CONV_LM"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
+        )
+        transformer_raw_cov_lm_conv = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW_COV_CONV_LM"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
         )
 
         plot_llr_violins(
@@ -185,13 +188,15 @@ def main(args):
                 transformer_raw_cov,
                 transformer_filtered_cov_lm,
                 transformer_raw_cov_lm,
-                transformer_filtered_cov_lm_conv
+                transformer_filtered_cov_lm_conv,
+                transformer_raw_cov_lm_conv
             ],
             labels=[
                 "Transf Cov",
                 "Transf Cov \n (Raw)",
                 "Transf LM Cov",
                 "Transf LM Cov \n (Raw)",
+                "Transf LM Cov Conv",
                 "Transf LM Cov Conv \n (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
