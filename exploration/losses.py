@@ -128,6 +128,7 @@ def main(args):
             dpi=1200,
         )
         '''
+        '''
         transformer_raw_head = bootstrap_mean_difference(
             -losses["TRANSFORMER_RAW_HEADS"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
         )
@@ -161,7 +162,7 @@ def main(args):
             step=0.25,
             dpi=1200,
         )
-
+        '''
         transformer_filtered_cov = bootstrap_mean_difference(
             -losses["TRANSFORMER_FILTERED_COV"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
         )

@@ -13,11 +13,6 @@ for path in (SUBMODULE, SUBMODULE_SRC, SUBMODULE_SCRIPTS):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from data_preprocessing import data
-from exploration import exploration
-from spatio_temporal_reading import train, train_baseline, visualize_sequence, test, test_baseline
-from spatio_temporal_reading.launchers.baseline import grid_search_baseline
-
 def main(args):
     if args.data:
         datapath = Path(args.data)
@@ -26,30 +21,38 @@ def main(args):
     if args.checkpoint_path:
         checkpoint_path = Path(args.checkpoint_path)
     if args.include_indices:
+        from data_preprocessing import data
         data.include_index(datapath)
     if args.make_plots:
+        from exploration import exploration
         exploration.make_plots(datapath, outputpath)
     if args.train:
+        from spatio_temporal_reading import train
         train.main(
             datapath=datapath,
             outputpath=outputpath,
             args=args
         )
     if args.train_baseline:
+        from spatio_temporal_reading.launchers.baseline import grid_search_baseline
         grid_search_baseline.main(datapath)        
     if args.visualize_model:
+        from spatio_temporal_reading import visualize_sequence
         visualize_sequence.main(datapath, checkpoint_path, outputpath, args)
     if args.test:
+        from spatio_temporal_reading import test
         test.main(
             datapath=datapath,
             args=args
         )
     if args.test_baseline:
+        from spatio_temporal_reading import test_baseline
         test_baseline.main(
             datapath=datapath,
             args=args
         )
     if args.include_tokens:
+        from data_preprocessing import data
         data.include_tokens(datapath)
 
 
