@@ -198,7 +198,7 @@ class MecoDatasetLM_conv(MecoDatasetLM):
         lm_emb = torch.cat([zero_row, lm_emb], dim=0)
 
         T = lm_emb.shape[0]
-        lm_emb_flat = lm_emb.reshape(T, 768*3)
+        lm_emb_flat = lm_emb.reshape(T, -1)
 
         zero_row = torch.zeros((1, ctx_valid.shape[1]), dtype=torch.float32)
         ctx_valid = torch.cat([zero_row, ctx_valid], dim=0)
