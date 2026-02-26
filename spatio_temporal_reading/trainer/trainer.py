@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import json
+import time
 
 from spatio_temporal_reading.loss.loss import NegLogLikelihood, NegLogLikelihoodCov
 
@@ -41,12 +42,20 @@ class Trainer:
         self.var_pos = torch.tensor([[var_x, 0], [0, var_y]], device=self.device, dtype=torch.float32)
         self.std_sacc = torch.tensor([np.sqrt(var_sacc)], device=self.device, dtype=torch.float32)
 
+    def _sync_cuda(self):
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+
     def train(self):
 
         best_val_loss = float("inf")
+        train_start = time.perf_counter()
 
         for epoch in range(self.epochs):
+            epoch_start = time.perf_counter()
             losses_epoch = []
+            fwd_times = []
+            bwd_times = []
             for i, item in enumerate(self.train_loader):
                 self.optimizer.zero_grad(set_to_none=True)
 
@@ -56,6 +65,8 @@ class Trainer:
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
+                self._sync_cuda()
+                fwd_start = time.perf_counter()
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model = self.model(input_model)
 
@@ -68,9 +79,13 @@ class Trainer:
                         cov_pos=self.var_pos,
                         std_sacc=self.std_sacc
                     )
+                self._sync_cuda()
+                fwd_times.append(time.perf_counter() - fwd_start)
 
                 losses_epoch.append(loss.item() / positions_model.shape[1])
 
+                self._sync_cuda()
+                bwd_start = time.perf_counter()
                 if self.use_amp:
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)
@@ -78,11 +93,24 @@ class Trainer:
                 else:
                     loss.backward()
                     self.optimizer.step()
+                self._sync_cuda()
+                bwd_times.append(time.perf_counter() - bwd_start)
 
             print(f"reached epoch {epoch}")
 
             avg_epoch_loss = np.array(losses_epoch).mean()
             print(f"avg loss on training set loss: {avg_epoch_loss}")
+            epoch_wall = time.perf_counter() - epoch_start
+            total_fwd = float(np.sum(fwd_times))
+            total_bwd = float(np.sum(bwd_times))
+            denom = epoch_wall if epoch_wall > 0 else 1e-12
+            print(
+                f"timing train epoch {epoch}: "
+                f"iters={len(fwd_times)}, "
+                f"forward_total={total_fwd:.2f}s ({100.0 * total_fwd / denom:.1f}%), "
+                f"backward_total={total_bwd:.2f}s ({100.0 * total_bwd / denom:.1f}%), "
+                f"epoch_total={epoch_wall:.2f}s"
+            )
 
             val_loss = self.eval()
             print(f"eval loss: {val_loss}")
@@ -96,6 +124,7 @@ class Trainer:
                 }
 
                 torch.save(checkpoint, self.outputpath / "best_model.pt")
+        print(f"total training wall time: {time.perf_counter() - train_start:.2f}s")
 
 
     def eval(self):
@@ -129,9 +158,13 @@ class Trainer:
 class TrainerCov(Trainer):
     def train(self):
         best_val_loss = float("inf")
+        train_start = time.perf_counter()
 
         for epoch in range(self.epochs):
+            epoch_start = time.perf_counter()
             losses_epoch = []
+            fwd_times = []
+            bwd_times = []
             for i, item in enumerate(self.train_loader):
                 self.optimizer.zero_grad(set_to_none=True)
 
@@ -141,6 +174,8 @@ class TrainerCov(Trainer):
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
+                self._sync_cuda()
+                fwd_start = time.perf_counter()
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
 
@@ -153,9 +188,13 @@ class TrainerCov(Trainer):
                         positions=positions_target,
                         saccades=saccades_target
                     )
+                self._sync_cuda()
+                fwd_times.append(time.perf_counter() - fwd_start)
 
                 losses_epoch.append(loss.item() / positions_model.shape[1])
 
+                self._sync_cuda()
+                bwd_start = time.perf_counter()
                 if self.use_amp:
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)
@@ -163,11 +202,24 @@ class TrainerCov(Trainer):
                 else:
                     loss.backward()
                     self.optimizer.step()
+                self._sync_cuda()
+                bwd_times.append(time.perf_counter() - bwd_start)
 
             print(f"reached epoch {epoch}")
 
             avg_epoch_loss = np.array(losses_epoch).mean()
             print(f"avg loss on training set loss: {avg_epoch_loss}")
+            epoch_wall = time.perf_counter() - epoch_start
+            total_fwd = float(np.sum(fwd_times))
+            total_bwd = float(np.sum(bwd_times))
+            denom = epoch_wall if epoch_wall > 0 else 1e-12
+            print(
+                f"timing train epoch {epoch}: "
+                f"iters={len(fwd_times)}, "
+                f"forward_total={total_fwd:.2f}s ({100.0 * total_fwd / denom:.1f}%), "
+                f"backward_total={total_bwd:.2f}s ({100.0 * total_bwd / denom:.1f}%), "
+                f"epoch_total={epoch_wall:.2f}s"
+            )
 
             val_loss = self.eval()
             print(f"eval loss: {val_loss}")
@@ -181,6 +233,7 @@ class TrainerCov(Trainer):
                 }
 
                 torch.save(checkpoint, self.outputpath / "best_model.pt")
+        print(f"total training wall time: {time.perf_counter() - train_start:.2f}s")
 
 
     def eval(self):

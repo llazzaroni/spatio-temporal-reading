@@ -4,9 +4,9 @@ import numpy as np
 from pathlib import Path
 
 from spatio_temporal_reading.data.data import MecoDataset
-from spatio_temporal_reading.data.dataLM import MecoDatasetLM
+from spatio_temporal_reading.data.dataLM import MecoDatasetLM, MecoDatasetLM_conv
 from spatio_temporal_reading.model.model import SimpleModel, TransformerCov
-from spatio_temporal_reading.model.modelLM import SimpleModelLM, TransformerCovLM
+from spatio_temporal_reading.model.modelLM import SimpleModelLM, TransformerCovLM, TransformerCovLM_conv
 from spatio_temporal_reading.trainer.tester import Tester, TesterCov
 
 def get_device():
@@ -19,7 +19,10 @@ def load_model(checkpoint_path, args, device):
     config = checkpoint["config"]
     if args.augment:
         if args.cov:
-            model = TransformerCovLM(**config)
+            if args.conv:
+                model = TransformerCovLM_conv(**config)
+            else:
+                model = TransformerCovLM(**config)
         else:
             model = SimpleModelLM(**config)
     else:
@@ -37,7 +40,10 @@ def main(datapath, args):
     if not args.augment:
         test_ds = MecoDataset(mode="test", filtering=args.filtering, datadir=datapath)
     else:
-        test_ds = MecoDatasetLM(mode="test", filtering=args.filtering, datadir=datapath)
+        if args.conv:
+            test_ds = MecoDatasetLM_conv(mode="test", filtering=args.filtering, datadir=datapath)
+        else:
+            test_ds = MecoDatasetLM(mode="test", filtering=args.filtering, datadir=datapath)
 
     test_loader = DataLoader(
         test_ds,
