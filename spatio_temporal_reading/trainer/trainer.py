@@ -30,7 +30,7 @@ class Trainer:
         self.device = device
         self.use_amp = bool(use_amp and device == "cuda")
         self.non_blocking = device == "cuda"
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
         with open(datapath / "variances.json", "r") as f:
             variances = json.load(f)
 
@@ -56,7 +56,7 @@ class Trainer:
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model = self.model(input_model)
 
                     loss = NegLogLikelihood(
@@ -108,7 +108,7 @@ class Trainer:
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model = self.model(input_model)
 
                     loss = NegLogLikelihood(
@@ -141,7 +141,7 @@ class TrainerCov(Trainer):
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
 
                     loss = NegLogLikelihoodCov(
@@ -193,7 +193,7 @@ class TrainerCov(Trainer):
                 positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
                 saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
 
-                with torch.cuda.amp.autocast(enabled=self.use_amp):
+                with torch.amp.autocast("cuda", enabled=self.use_amp):
                     weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
 
                     loss = NegLogLikelihoodCov(
