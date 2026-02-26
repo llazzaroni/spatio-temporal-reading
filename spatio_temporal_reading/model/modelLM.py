@@ -1,5 +1,5 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead, gptProjector_conv
+from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead, gptProjector_conv, gptProjector_fused
 import torch
 
 
@@ -181,7 +181,7 @@ class TransformerCovLM_conv(TransformerCovLM):
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
         # Project the gpt-2 embeddings onto a lower-dimensional space
-        self.gptProjector = gptProjector_conv()
+        self.gptProjector = gptProjector_fused()
 
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)

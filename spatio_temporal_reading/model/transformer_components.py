@@ -159,6 +159,38 @@ class gptProjector_conv(nn.Module):
 
         return x
 
+    
+class gptProjector_fused(nn.Module):
+    def __init__(self, context_size=7):
+        super().__init__()
+        self.context_size = context_size
+        self.context_logits = nn.Parameter(torch.zeros(context_size))
+        self.norm = nn.LayerNorm(768)
+        self.linear1 = nn.Linear(768, 64)
+        self.linear2 = nn.Linear(64, 4)
+        self.act = nn.GELU()
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, lm_emb_flat, ctx_valid):
+        B, T, _ = lm_emb_flat.shape
+        lm_emb = lm_emb_flat.reshape(B, T, 768, self.context_size)
+        lm_emb = lm_emb.reshape(B * T, 768, self.context_size)
+        mask = ctx_valid.reshape(B * T, self.context_size).to(lm_emb.dtype)
+
+        # Global learned context weights, masked and renormalized per sample.
+        weights = torch.softmax(self.context_logits, dim=0).unsqueeze(0) * mask
+        weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-6)
+
+        fused = (lm_emb * weights.unsqueeze(1)).sum(dim=-1)
+        center = lm_emb[:, :, self.context_size // 2]
+        fused = self.norm(fused + center)
+        fused = fused.reshape(B, T, -1)
+
+        x = self.linear1(fused)
+        x = self.act(x)
+        x = self.dropout(x)
+        return self.linear2(x)
+
 
 
         
