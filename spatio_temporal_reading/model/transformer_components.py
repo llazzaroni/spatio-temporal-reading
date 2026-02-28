@@ -165,7 +165,6 @@ class gptProjector_fused(nn.Module):
         super().__init__()
         self.context_size = context_size
         self.context_logits = nn.Parameter(torch.zeros(context_size))
-        self.norm = nn.LayerNorm(768)
         self.linear1 = nn.Linear(768, 64)
         self.linear2 = nn.Linear(64, 4)
         self.act = nn.GELU()
@@ -182,16 +181,12 @@ class gptProjector_fused(nn.Module):
         weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-6)
 
         fused = (lm_emb * weights.unsqueeze(1)).sum(dim=-1)
-        center = lm_emb[:, :, self.context_size // 2]
-        fused = self.norm(fused + center)
         fused = fused.reshape(B, T, -1)
 
         x = self.linear1(fused)
         x = self.act(x)
         x = self.dropout(x)
         return self.linear2(x)
-
-
 
         
 class TransformerBlockMultiHeadAttn(nn.Module):
