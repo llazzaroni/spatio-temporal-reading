@@ -48,86 +48,181 @@ def main(args):
     
     if args.evaluate_models:
         losses = {}
-        models = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW", "TRANSFORMER_FILTERED_HEADS", "TRANSFORMER_RAW_HEADS", "TRANSFORMER_FILTERED_LM", "TRANSFORMER_RAW_LM", "TRANSFORMER_FILTERED_COV", "TRANSFORMER_RAW_COV", "TRANSFORMER_FILTERED_COV_LM", "TRANSFORMER_RAW_COV_LM", "TRANSFORMER_FILTERED_COV_CONV_LM", "TRANSFORMER_RAW_COV_CONV_LM", "TRANSFORMER_FILTERED_COV_AVG_LM"]
+        models = ["dur_baseline_raw", "duration_baseline_filtered", "RME_LN_CHAR_LEN_FREQ_FILTERED", "RME_LN_CHAR_LEN_FREQ_RAW", "RME_LN_CHAR_WORD_LEN_FREQ_FILTERED", "RME_LN_CHAR_WORD_LEN_FREQ_RAW", "RME_LN_CS_FILTERED", "RME_LN_CS_RAW", "RME_LN_DUR_FILTERED", "RME_LN_DUR_RAW", "RME_LN_FILTERED", "RME_LN_FREQ_FILTERED", "RME_LN_FREQ_RAW", "RME_LN_LEN_FILTERED", "RME_LN_LEN_FREQ_FILTERED", "RME_LN_LEN_FREQ_RAW", "RME_LN_LEN_RAW", "RME_LN_RAW", "RME_LN_WORD_LEN_FREQ_FILTERED", "RME_LN_WORD_LEN_FREQ_RAW", "RME_LN_WS_FILTERED", "RME_LN_WS_RAW"]
         for model in models:
             model_path = models_path / model
             npy_path = model_path / "negloglikelihoods.npy"
             likelihoods = np.load(npy_path)
             losses[model] = likelihoods
 
-        eff_rme_css_bstrp = bootstrap_mean_difference(
-            -losses["RME_CSS_FILTERED"],
-            -losses["poisson_filtered_baseline"],
+        eff_rme = bootstrap_mean_difference(
+            -losses["RME_LN_FILTERED"],
+            -losses["duration_baseline_filtered"],
             N=1000,
         )
-        eff_css_bstrp = bootstrap_mean_difference(
-            -losses["CSS_FILTERED"],
-            -losses["poisson_filtered_baseline"],
+
+        eff_rme_raw = bootstrap_mean_difference(
+            -losses["RME_LN_RAW"],
+            -losses["dur_baseline_raw"],
             N=1000,
         )
-        eff_lf_bstrp = bootstrap_mean_difference(
-            -losses["BASE_LF_FILTERED"],
-            -losses["poisson_filtered_baseline"],
+
+        eff_rme_len = bootstrap_mean_difference(
+            -losses["RME_LN_LEN_FILTERED"],
+            -losses["duration_baseline_filtered"],
             N=1000,
         )
-        eff_hp_bstrp = bootstrap_mean_difference(
-            -losses["BASE_SHP_FILTERED"],
-            -losses["poisson_filtered_baseline"],
+
+        eff_rme_len_raw = bootstrap_mean_difference(
+            -losses["RME_LN_LEN_RAW"],
+            -losses["dur_baseline_raw"],
             N=1000,
         )
-        eff_rme_css_bstrp_raw = bootstrap_mean_difference(
-            -losses["RME_CSS_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+
+        eff_rme_freq = bootstrap_mean_difference(
+            -losses["RME_LN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
         )
-        eff_css_bstrp_raw = bootstrap_mean_difference(
-            -losses["CSS_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+
+        eff_rme_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
         )
-        eff_lf_bstrp_raw = bootstrap_mean_difference(
-            -losses["BASE_LF_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+
+        eff_rme_ws = bootstrap_mean_difference(
+            -losses["RME_LN_WS_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
         )
-        eff_hp_bstrp_raw = bootstrap_mean_difference(
-            -losses["BASE_SHP_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+
+        eff_rme_ws_raw = bootstrap_mean_difference(
+            -losses["RME_LN_WS_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
         )
-    
-        transformer_raw_rme = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+
+        eff_rme_cs = bootstrap_mean_difference(
+            -losses["RME_LN_CS_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
         )
-        transformer_filtered_rme = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED"], -losses["poisson_filtered_baseline"], N=1000, reduce=True
+
+        eff_rme_cs_raw = bootstrap_mean_difference(
+            -losses["RME_LN_CS_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_dur = bootstrap_mean_difference(
+            -losses["RME_LN_DUR_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_dur_raw = bootstrap_mean_difference(
+            -losses["RME_LN_DUR_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_len_freq = bootstrap_mean_difference(
+            -losses["RME_LN_LEN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_len_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_LEN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_word_len_freq = bootstrap_mean_difference(
+            -losses["RME_LN_WORD_LEN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_word_len_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_WORD_LEN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_word_len_freq = bootstrap_mean_difference(
+            -losses["RME_LN_WORD_LEN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_word_len_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_WORD_LEN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_char_len_freq = bootstrap_mean_difference(
+            -losses["RME_LN_CHAR_LEN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_char_len_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_CHAR_LEN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
+        eff_rme_char_word_len_freq = bootstrap_mean_difference(
+            -losses["RME_LN_CHAR_WORD_LEN_FREQ_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_rme_char_word_len_freq_raw = bootstrap_mean_difference(
+            -losses["RME_LN_CHAR_WORD_LEN_FREQ_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
         )
 
         plot_llr_violins(
             [
-                eff_lf_bstrp,
-                eff_lf_bstrp_raw,
-                eff_hp_bstrp,
-                eff_hp_bstrp_raw,
-                eff_css_bstrp,
-                eff_css_bstrp_raw,
-                eff_rme_css_bstrp,
-                eff_rme_css_bstrp_raw,
-                transformer_filtered_rme,
-                transformer_raw_rme
+                eff_rme,
+                eff_rme_raw,
+                eff_rme_len,
+                eff_rme_len_raw,
+                eff_rme_freq,
+                eff_rme_freq_raw,
+                eff_rme_ws,
+                eff_rme_ws_raw,
+                eff_rme_cs,
+                eff_rme_cs_raw,
+                eff_rme_dur,
+                eff_rme_dur_raw
             ],
             labels=[
-                "Last \n Fix",
-                "Last Fix \n (Raw)",
-                "Hawkes",
-                "Hawkes \n (Raw)",
-                "CSS",
-                "CSS \n (Raw)",
-                "CSS RME",
-                "CSS RME \n (Raw)",
-                "Transf",
-                "Transf \n (Raw)"
+                "rme",
+                "rme (Raw)",
+                "rme len",
+                "rme len (Raw)",
+                "rme freq",
+                "rme freq (Raw)",
+                "rme ws",
+                "rme ws (Raw)",
+                "rme cs",
+                "rme cs (Raw)",
+                "rme dur",
+                "rme dur (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
             y_label="Delta Log-Likelihood Per Fixation w.r.t. poisson",
-            save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_poisson.png",
+            save_path=Path(__file__).resolve().parent / "duration_evaluation_wrt_poisson.png",
             fig_size=(10, 6),
-            step=0.25,
+            step=0.05,
             dpi=1200,
         )
-        '''
         '''
         transformer_raw_head = bootstrap_mean_difference(
             -losses["TRANSFORMER_RAW_HEADS"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
@@ -196,6 +291,7 @@ def main(args):
             step=0.5,
             dpi=1200,
         )
+        '''
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
