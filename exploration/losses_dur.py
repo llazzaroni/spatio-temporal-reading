@@ -48,7 +48,7 @@ def main(args):
     
     if args.evaluate_models:
         losses = {}
-        models = ["dur_baseline_raw", "duration_baseline_filtered", "RME_LN_CHAR_LEN_FREQ_FILTERED", "RME_LN_CHAR_LEN_FREQ_RAW", "RME_LN_CHAR_WORD_LEN_FREQ_FILTERED", "RME_LN_CHAR_WORD_LEN_FREQ_RAW", "RME_LN_CS_FILTERED", "RME_LN_CS_RAW", "RME_LN_DUR_FILTERED", "RME_LN_DUR_RAW", "RME_LN_FILTERED", "RME_LN_FREQ_FILTERED", "RME_LN_FREQ_RAW", "RME_LN_LEN_FILTERED", "RME_LN_LEN_FREQ_FILTERED", "RME_LN_LEN_FREQ_RAW", "RME_LN_LEN_RAW", "RME_LN_RAW", "RME_LN_WORD_LEN_FREQ_FILTERED", "RME_LN_WORD_LEN_FREQ_RAW", "RME_LN_WS_FILTERED", "RME_LN_WS_RAW"]
+        models = ["dur_baseline_raw", "duration_baseline_filtered", "RME_LN_CHAR_LEN_FREQ_FILTERED", "RME_LN_CHAR_LEN_FREQ_RAW", "RME_LN_CHAR_WORD_LEN_FREQ_FILTERED", "RME_LN_CHAR_WORD_LEN_FREQ_RAW", "RME_LN_CS_FILTERED", "RME_LN_CS_RAW", "RME_LN_DUR_FILTERED", "RME_LN_DUR_RAW", "RME_LN_FILTERED", "RME_LN_FREQ_FILTERED", "RME_LN_FREQ_RAW", "RME_LN_LEN_FILTERED", "RME_LN_LEN_FREQ_FILTERED", "RME_LN_LEN_FREQ_RAW", "RME_LN_LEN_RAW", "RME_LN_RAW", "RME_LN_WORD_LEN_FREQ_FILTERED", "RME_LN_WORD_LEN_FREQ_RAW", "RME_LN_WS_FILTERED", "RME_LN_WS_RAW", "TRANSFORMER_FILTERED", "TRANSFORMER_RAW", "TRANSFORMER_FILTERED_LM", "TRANSFORMER_RAW_LM"]
         for model in models:
             model_path = models_path / model
             npy_path = model_path / "negloglikelihoods.npy"
@@ -187,6 +187,18 @@ def main(args):
             N=1000,
         )
 
+        eff_transformer = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED"],
+            -losses["duration_baseline_filtered"],
+            N=1000,
+        )
+
+        eff_transformer_raw = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW"],
+            -losses["dur_baseline_raw"],
+            N=1000,
+        )
+
         plot_llr_violins(
             [
                 eff_rme,
@@ -200,7 +212,17 @@ def main(args):
                 eff_rme_cs,
                 eff_rme_cs_raw,
                 eff_rme_dur,
-                eff_rme_dur_raw
+                eff_rme_dur_raw,
+                eff_rme_len_freq,
+                eff_rme_len_freq_raw,
+                eff_rme_word_len_freq,
+                eff_rme_word_len_freq_raw,
+                eff_rme_char_len_freq,
+                eff_rme_char_len_freq_raw,
+                eff_rme_char_word_len_freq,
+                eff_rme_char_word_len_freq_raw,
+                eff_transformer,
+                eff_transformer_raw
             ],
             labels=[
                 "rme",
@@ -214,7 +236,17 @@ def main(args):
                 "rme cs",
                 "rme cs (Raw)",
                 "rme dur",
-                "rme dur (Raw)"
+                "rme dur (Raw)",
+                "rme len freq",
+                "rme len freq (Raw)",
+                "rme word len freq",
+                "rme word len freq (Raw)",
+                "rme char len freq",
+                "rme char len freq (Raw)",
+                "rme char word len freq",
+                "rme char word len freq (Raw)",
+                "transformer",
+                "transformer (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
             y_label="Delta Log-Likelihood Per Fixation w.r.t. poisson",
@@ -223,75 +255,34 @@ def main(args):
             step=0.05,
             dpi=1200,
         )
-        '''
-        transformer_raw_head = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_HEADS"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
+
+        eff_transformer_lm = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED_LM"],
+            -losses["TRANSFORMER_FILTERED"],
+            N=1000,
         )
-        transformer_filtered_head = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_HEADS"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_filtered_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_LM"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_raw_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_LM"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
+        eff_transformer_lm_raw = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW_LM"],
+            -losses["TRANSFORMER_RAW"],
+            N=1000,
         )
 
         plot_llr_violins(
             [
-                transformer_filtered_head,
-                transformer_raw_head,
-                transformer_filtered_lm,
-                transformer_raw_lm
+                eff_transformer_lm,
+                eff_transformer_lm_raw
             ],
             labels=[
-                "Transf Heads",
-                "Transf Heads \n (Raw)",
-                "Transf LM",
-                "Transf LM \n (Raw)"
+                "transformer LM",
+                "transformer LM (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
-            y_label="Delta Log-Likelihood Per Fixation w.r.t. transformer baseline",
-            save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_transformer_complete.png",
+            y_label="Delta Log-Likelihood Per Fixation w.r.t. transformer",
+            save_path=Path(__file__).resolve().parent / "duration_evaluation_wrt_transformer.png",
             fig_size=(10, 6),
-            step=0.25,
+            step=0.005,
             dpi=1200,
         )
-        
-        transformer_filtered_cov = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_COV"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_raw_cov = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_COV"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
-        )
-        transformer_filtered_cov_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_COV_LM"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_raw_cov_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_COV_LM"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
-        )
-
-        plot_llr_violins(
-            [
-                transformer_filtered_cov,
-                transformer_raw_cov,
-                transformer_filtered_cov_lm,
-                transformer_raw_cov_lm
-            ],
-            labels=[
-                "Transf Cov",
-                "Transf Cov \n (Raw)",
-                "Transf LM Cov",
-                "Transf LM Cov \n (Raw)"
-            ],
-            title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
-            y_label="Delta Log-Likelihood Per Fixation w.r.t. transformer baseline",
-            save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_transformer_cov.png",
-            fig_size=(10, 6),
-            step=0.5,
-            dpi=1200,
-        )
-        '''
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()

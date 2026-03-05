@@ -7,8 +7,8 @@ from spatio_temporal_reading.data.data import MecoDataset
 from spatio_temporal_reading.data.dataLM import MecoDatasetLM, MecoDatasetLM_conv
 from spatio_temporal_reading.model.model import SimpleModel, TransformerCov
 from spatio_temporal_reading.model.modelLM import SimpleModelLM, TransformerCovLM, TransformerCovLM_conv
-from spatio_temporal_reading.loss.loss import NegLogLikelihood
-from spatio_temporal_reading.trainer.trainer import Trainer, TrainerCov
+from spatio_temporal_reading.loss.loss_sacc import NegLogLikelihood
+from spatio_temporal_reading.trainer.trainer_sacc import Trainer, TrainerCov
 
 def get_device():
     if torch.cuda.is_available():
@@ -36,7 +36,8 @@ def main(datapath, outputpath, args):
         "n_layers": args.n_layers,
         "n_admixture_components": args.n_components,
         "max_len": train_ds.max_len,
-        "H": args.heads
+        "H": args.heads,
+        "dropout": float(args.dropout)
     }
 
     dataloader_kwargs = dict(
@@ -67,7 +68,8 @@ def main(datapath, outputpath, args):
                 d_model=model_config["d_model"],
                 n_admixture_components=model_config["n_admixture_components"],
                 max_len=model_config["max_len"],
-                H=model_config["H"]
+                H=model_config["H"],
+                dropout=model_config["dropout"]
             ).to(device)
         else:
             model = SimpleModel(
@@ -77,7 +79,8 @@ def main(datapath, outputpath, args):
                 d_model=model_config["d_model"],
                 n_admixture_components=model_config["n_admixture_components"],
                 max_len=model_config["max_len"],
-                H=model_config["H"]
+                H=model_config["H"],
+                dropout=model_config["dropout"]
             ).to(device)
     else:
         if args.cov:
@@ -89,7 +92,8 @@ def main(datapath, outputpath, args):
                     d_model=model_config["d_model"],
                     n_admixture_components=model_config["n_admixture_components"],
                     max_len=model_config["max_len"],
-                    H=model_config["H"]
+                    H=model_config["H"],
+                    dropout=model_config["dropout"]
                 ).to(device)
             else:
                 model = TransformerCovLM(
@@ -99,7 +103,8 @@ def main(datapath, outputpath, args):
                     d_model=model_config["d_model"],
                     n_admixture_components=model_config["n_admixture_components"],
                     max_len=model_config["max_len"],
-                    H=model_config["H"]
+                    H=model_config["H"],
+                    dropout=model_config["dropout"]
                 ).to(device)
         else:
             model = SimpleModelLM(
@@ -109,7 +114,8 @@ def main(datapath, outputpath, args):
                 d_model=model_config["d_model"],
                 n_admixture_components=model_config["n_admixture_components"],
                 max_len=model_config["max_len"],
-                H=model_config["H"]
+                H=model_config["H"],
+                dropout=model_config["dropout"]
             ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)

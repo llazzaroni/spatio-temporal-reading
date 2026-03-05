@@ -15,6 +15,13 @@ def load_model(checkpoint_path):
     # Explicitly allow full checkpoint loading (needed for older saves)
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint["config"]
+    if isinstance(config, dict):
+        config = dict(config)
+    elif hasattr(config, "__dict__"):
+        config = vars(config).copy()
+    else:
+        config = dict(config)
+    config.setdefault("dropout", 0.0)
     model = SimpleModel(**config)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

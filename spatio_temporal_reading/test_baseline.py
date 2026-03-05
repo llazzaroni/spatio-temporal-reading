@@ -15,10 +15,6 @@ from submodule.src.model.saccades.log_likelihood import set_saccadesNLL
 from submodule.src.model.durations.log_likelihood import DurationNLL
 from spatio_temporal_reading.launchers.baseline.grid_search_baseline import RunConfig
 
-
-FOLDERS = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED"]
-
-
 class DummyLogger:
     def info(self, *args, **kwargs):
         pass
@@ -102,6 +98,11 @@ def select_best_model(root):
 
 def main(datapath, args):
     root = Path(args.models_path)
+
+    if not args.durations:
+        FOLDERS = ["RME_CSS_WS_FILTERED", "RME_CSS_WS_RAW", "BASE_LF_RAW", "BASE_SHP_RAW", "CSS_RAW", "poisson_raw_baseline", "RME_CSS_CHAR_LEN_FREQ_RAW", "RME_CSS_CHAR_WORD_LEN_FREQ_RAW", "RME_CSS_CS_RAW", "RME_CSS_DUR_RAW", "RME_CSS_FREQ_RAW", "RME_CSS_LEN_FREQ_RAW", "RME_CSS_LEN_RAW", "RME_CSS_RAW", "RME_CSS_WORD_LEN_FREQ_RAW", "RME_CSS_WS_RAW", "BASE_LF_FILTERED", "BASE_SHP_FILTERED", "CSS_FILTERED", "poisson_filtered_baseline", "RME_CSS_CHAR_LEN_FREQ_FILTERED", "RME_CSS_CHAR_WORD_LEN_FREQ_FILTERED", "RME_CSS_CS_FILTERED", "RME_CSS_DUR_FILTERED", "RME_CSS_FREQ_FILTERED", "RME_CSS_LEN_FREQ_FILTERED", "RME_CSS_LEN_FILTERED", "RME_CSS_FILTERED", "RME_CSS_WORD_LEN_FREQ_FILTERED", "RME_CSS_WS_FILTERED"]
+    else:
+        FOLDERS = ["dur_baseline_raw", "duration_baseline_filtered", "RME_LN_CHAR_LEN_FREQ_FILTERED", "RME_LN_CHAR_LEN_FREQ_RAW", "RME_LN_CHAR_WORD_LEN_FREQ_FILTERED", "RME_LN_CHAR_WORD_LEN_FREQ_RAW", "RME_LN_CS_FILTERED", "RME_LN_CS_RAW", "RME_LN_DUR_FILTERED", "RME_LB_DUR_RAW", "RME_LN_FILTERED", "RME_LN_FREQ_FILTERED", "RME_LN_FREQ_RAW", "RME_LN_LEN_FILTERED", "RME_LN_LEN_FREQ_FILTERED", "RME_LN_LEN_FREQ_RAW", "RME_LN_LEN_RAW", "RME_LN_RAW", "RME_LN_WORD_LEN_FREQ_FILTERED", "RME_LN_WORD_LEN_FREQ_RAW", "RME_LN_WS_FILTERED", "RME_LN_WS_RAW"]
 
     for model_name in FOLDERS:
         model_path = root / model_name

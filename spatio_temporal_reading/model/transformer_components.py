@@ -6,45 +6,47 @@ import math
 # Define all the model components / submodules
 
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model):
+    def __init__(self, d_model, dropout):
         super().__init__()
-        self.AttentionBlock = AttentionBlock(d_model)
-        self.ffn = ffn(d_model)
+        self.AttentionBlock = AttentionBlock(d_model, dropout)
+        self.ffn = ffn(d_model, dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
+        self.drop_attn = nn.Dropout(dropout)
+        self.drop_ffn = nn.Dropout(dropout)
 
     def forward(self, tokens):
         # First the self attention
         x = self.AttentionBlock(tokens)
 
         # Then add and norm
-        x = self.norm1(tokens + x)
+        x = self.norm1(tokens + self.drop_attn(x))
 
         # Then the ffn
         y = self.ffn(x)
 
         # Finally, the add and norm
-        z = self.norm2(y + x)
+        z = self.norm2(self.drop_ffn(y) + x)
 
         return z
 
 
 class AttentionBlock(nn.Module):
 
-    def __init__(self, d_model):
+    def __init__(self, d_model, dropout):
         super().__init__()
         self.d_model = d_model
         self.keys_linear = nn.Linear(d_model, d_model)
         self.queries_linear = nn.Linear(d_model, d_model)
         self.values_linear = nn.Linear(d_model, d_model)
         self.distance_scale = nn.Parameter(torch.tensor(0.01))
+        self.attn_drop = nn.Dropout(dropout)
         self.IGNORE = float("-inf")
 
     def forward(self, tokens):
         # tokens have dimensions (batches, len_sequence, d_model)
         B, T, D = tokens.shape
-        assert D % self.H == 0, f"d_model ({D}) must be divisible by number of heads ({self.H})"
-
+    
         # First compute keys, queries and values
         keys = self.keys_linear(tokens) # (batches, len_sequences, d_model)
         queries = self.queries_linear(tokens) # (batches, len_sequences, d_model)
@@ -67,6 +69,7 @@ class AttentionBlock(nn.Module):
 
         # Fourth compute the softmax
         attn = scores.softmax(dim=-1) # (batches, len_sequences, len_sequences)
+        attn = self.attn_drop(attn)
 
         # Finally, multiply with the values
         out = torch.matmul(attn, values) # (batches, len_sequences, d_model)
@@ -81,15 +84,17 @@ class AttentionBlock(nn.Module):
     
 
 class ffn(nn.Module):
-    def __init__(self, d_model):
+    def __init__(self, d_model, dropout):
         super().__init__()
         self.linear1 = nn.Linear(d_model, d_model * 4)
         self.linear2 = nn.Linear(d_model * 4, d_model)
+        self.drop = nn.Dropout(dropout)
 
     def forward(self, tokens):
         # Tokens is of dimensions (n_batches, len_sequences, d_model)
         x = self.linear1(tokens)
         x = F.relu(x)
+        x = self.drop(x)
         x = self.linear2(x)
         return x
     
@@ -118,18 +123,34 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:, :x.shape[1], :] * self.alpha
     
 class gptProjector(nn.Module):
-    def __init__(self):
+    def __init__(self, dropout=0.1):
         super().__init__()
         self.linear1 = nn.Linear(768, 64)
         self.linear2 = nn.Linear(64, 4)
         self.act = nn.GELU()
-        self.dropout = nn.Dropout(0.1)
+        self.drop_hidden = nn.Dropout(dropout)
+        self.drop_out = nn.Dropout(dropout)
 
     def forward(self, x):
         x = self.linear1(x)
         x = self.act(x)
-        x = self.dropout(x)
-        return self.linear2(x)
+        x = self.drop_hidden(x)
+        x = self.linear2(x)
+        x = self.drop_out(x)
+        return x
+    
+class gptProjector_dur(nn.Module):
+    def __init__(self, dropout=0.1):
+        super().__init__()
+        self.linear1 = nn.Linear(768, 2)
+        self.act = nn.GELU()
+        self.drop = nn.Dropout(dropout)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        return x
     
 class gptProjector_conv(nn.Module):
     def __init__(self, context_size=7):
@@ -161,14 +182,15 @@ class gptProjector_conv(nn.Module):
 
     
 class gptProjector_fused(nn.Module):
-    def __init__(self, context_size=7):
+    def __init__(self, context_size=7, dropout=0.1):
         super().__init__()
         self.context_size = context_size
         self.context_logits = nn.Parameter(torch.zeros(context_size))
         self.linear1 = nn.Linear(768, 64)
         self.linear2 = nn.Linear(64, 4)
         self.act = nn.GELU()
-        self.dropout = nn.Dropout(0.1)
+        self.drop_hidden = nn.Dropout(dropout)
+        self.drop_out = nn.Dropout(dropout)
 
     def forward(self, lm_emb_flat, ctx_valid):
         B, T, _ = lm_emb_flat.shape
@@ -185,37 +207,41 @@ class gptProjector_fused(nn.Module):
 
         x = self.linear1(fused)
         x = self.act(x)
-        x = self.dropout(x)
-        return self.linear2(x)
+        x = self.drop_hidden(x)
+        x = self.linear2(x)
+        x = self.drop_out(x)
+        return x
 
         
 class TransformerBlockMultiHeadAttn(nn.Module):
-    def __init__(self, d_model, H):
+    def __init__(self, d_model, H, dropout):
         super().__init__()
-        self.MultiHeadAttentionBlock = MultiHeadAttentionBlock(d_model, H)
-        self.ffn = ffn(d_model)
+        self.MultiHeadAttentionBlock = MultiHeadAttentionBlock(d_model, H, dropout)
+        self.ffn = ffn(d_model, dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
+        self.drop_attn = nn.Dropout(dropout)
+        self.drop_ffn = nn.Dropout(dropout)
 
     def forward(self, tokens):
         # First the self attention
         x = self.MultiHeadAttentionBlock(tokens)
 
         # Then add and norm
-        x = self.norm1(tokens + x)
+        x = self.norm1(tokens + self.drop_attn(x))
 
         # Then the ffn
         y = self.ffn(x)
 
         # Finally, the add and norm
-        z = self.norm2(y + x)
+        z = self.norm2(self.drop_ffn(y) + x)
 
         return z
     
 
 class MultiHeadAttentionBlock(nn.Module):
 
-    def __init__(self, d_model, H):
+    def __init__(self, d_model, H, dropout):
         super().__init__()
         self.d_model = d_model
         self.keys_linear = nn.Linear(d_model, d_model)
@@ -225,6 +251,7 @@ class MultiHeadAttentionBlock(nn.Module):
         self.IGNORE = float("-inf")
         self.H = H
         self.W_out = nn.Linear(d_model, d_model)
+        self.attn_drop = nn.Dropout(dropout)
 
     def forward(self, tokens):
         # tokens have dimensions (batches, len_sequence, d_model)
@@ -257,7 +284,8 @@ class MultiHeadAttentionBlock(nn.Module):
         S = S / ((D // self.H) ** 0.5)
 
         # Fourth compute the softmax
-        S = S.softmax(dim=2) # (batches, len_sequences, len_sequences, d_model/heads)
+        S = S.softmax(dim=2) # (batches, len_sequences, len_sequences, heads)
+        S = self.attn_drop(S)
 
         # Finally, multiply with the values
         A = torch.einsum("btuh,buhd->bthd", S, values)
@@ -306,6 +334,20 @@ class Cov2DHead(nn.Module):
 
 
 class CovSaccHead(nn.Module):
+    def __init__(self, d_model, admixture_components, eps=1e-6):
+        super().__init__()
+        self.proj = nn.Linear(d_model, admixture_components)
+        self.eps = eps
+        self.admixture_components = admixture_components
+
+    def forward(self, x):
+        sigmas = self.proj(x) # (batches, len_sequence, admixture_components)
+
+        sigmas = F.softplus(sigmas) + self.eps
+
+        return sigmas # (batches, len_sequence, admixture_components)
+    
+class CovDurHead(nn.Module):
     def __init__(self, d_model, admixture_components, eps=1e-6):
         super().__init__()
         self.proj = nn.Linear(d_model, admixture_components)

@@ -3,11 +3,11 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from spatio_temporal_reading.data.data import MecoDataset
-from spatio_temporal_reading.data.dataLM import MecoDatasetLM, MecoDatasetLM_conv
+from spatio_temporal_reading.data.data_dur import MecoDataset_dur
+from spatio_temporal_reading.data.dataLM_dur import MecoDatasetLM_dur
 from spatio_temporal_reading.model.model import SimpleModel, TransformerCov
 from spatio_temporal_reading.model.modelLM import SimpleModelLM, TransformerCovLM, TransformerCovLM_conv
-from spatio_temporal_reading.trainer.tester import Tester, TesterCov
+from spatio_temporal_reading.trainer.tester_dur import Tester, TesterCov
 
 def get_device():
     return "cpu"
@@ -17,19 +17,26 @@ def load_model(checkpoint_path, args, device):
     # Explicitly allow full checkpoint loading (needed for older saves)
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     config = checkpoint["config"]
+    if isinstance(config, dict):
+        config = dict(config)
+    elif hasattr(config, "__dict__"):
+        config = vars(config).copy()
+    else:
+        config = dict(config)
+    config.setdefault("dropout", 0.0)
     if args.augment:
         if args.cov:
             if args.conv:
-                model = TransformerCovLM_conv(**config)
+                raise NotImplementedError
             else:
-                model = TransformerCovLM(**config)
+               model = TransformerCovLM(**config)
         else:
-            model = SimpleModelLM(**config)
+            raise NotImplementedError
     else:
         if args.cov:
             model = TransformerCov(**config)
         else:
-            model = SimpleModel(**config)
+            raise NotImplementedError
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
@@ -38,12 +45,12 @@ def load_model(checkpoint_path, args, device):
 def main(datapath, args):
 
     if not args.augment:
-        test_ds = MecoDataset(mode="test", filtering=args.filtering, datadir=datapath)
+        test_ds = MecoDataset_dur(mode="test", filtering=args.filtering, datadir=datapath)
     else:
         if args.conv:
-            test_ds = MecoDatasetLM_conv(mode="test", filtering=args.filtering, datadir=datapath)
+            raise NotImplementedError
         else:
-            test_ds = MecoDatasetLM(mode="test", filtering=args.filtering, datadir=datapath)
+            test_ds = MecoDatasetLM_dur(mode="test", filtering=args.filtering, datadir=datapath)
 
     test_loader = DataLoader(
         test_ds,
@@ -65,12 +72,7 @@ def main(datapath, args):
             device=device
         )
     else:
-        tester = Tester(
-            test_loader=test_loader,
-            model=model,
-            datapath=datapath,
-            device=device
-        )
+        raise NotImplementedError
     losses = tester.test()
 
     checkpoint_path = Path(checkpoint_path)

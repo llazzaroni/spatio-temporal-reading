@@ -38,9 +38,10 @@ class Tester:
                     history_points=history_points,
                     current_point=current_point,
                     current_dur=current_dur,
+                    reduce="none",
                 )
-            
-                losses.append(loss_detached.numpy())
+
+                losses.append(np.atleast_1d(loss_detached.cpu().numpy()).reshape(-1))
 
         losses_np = np.concatenate(losses)
         return losses_np

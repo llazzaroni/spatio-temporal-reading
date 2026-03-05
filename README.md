@@ -113,7 +113,6 @@ Optional:
 
 
 
-# TODO put several encodings together and feed them through a convolution
 # TODO check how backward fixations look
 # TODO possibly interpretability, what is the most important predictor
 # TODO duration models

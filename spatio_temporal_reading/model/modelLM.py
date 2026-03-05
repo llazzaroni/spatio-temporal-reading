@@ -1,5 +1,5 @@
 import torch.nn as nn
-from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead, gptProjector_conv, gptProjector_fused
+from spatio_temporal_reading.model.transformer_components import TransformerBlock, TransformerBlockMultiHeadAttn, PositionalEncoding, gptProjector, Cov2DHead, CovSaccHead, gptProjector_conv, gptProjector_fused, CovDurHead, gptProjector_dur
 import torch
 
 
@@ -12,7 +12,8 @@ class SimpleModelLM(nn.Module):
             n_layers,
             n_admixture_components,
             max_len,
-            H
+            H,
+            dropout
     ):
         super().__init__()
 
@@ -23,6 +24,7 @@ class SimpleModelLM(nn.Module):
         self.n_admixture_components = n_admixture_components
         self.max_len = max_len
         self.H = H
+        self.dropout = dropout
         self.initialize_submodules()
 
     def initialize_submodules(self):
@@ -38,12 +40,12 @@ class SimpleModelLM(nn.Module):
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
         # Project the gpt-2 embeddings onto a lower-dimensional space
-        self.gptProjector = gptProjector()
+        self.gptProjector = gptProjector(dropout=self.dropout)
 
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)
         self.attention_layers = nn.ModuleList([
-            TransformerBlockMultiHeadAttn(self.d_model, self.H)
+            TransformerBlockMultiHeadAttn(self.d_model, self.H, self.dropout)
             for _ in range(self.n_layers)
         ])
 
@@ -113,12 +115,12 @@ class TransformerCovLM(SimpleModelLM):
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
         # Project the gpt-2 embeddings onto a lower-dimensional space
-        self.gptProjector = gptProjector()
+        self.gptProjector = gptProjector(dropout=self.dropout)
 
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)
         self.attention_layers = nn.ModuleList([
-            TransformerBlockMultiHeadAttn(self.d_model, self.H)
+            TransformerBlockMultiHeadAttn(self.d_model, self.H, self.dropout)
             for _ in range(self.n_layers)
         ])
 
@@ -171,6 +173,59 @@ class TransformerCovLM(SimpleModelLM):
 
 
         return weights, positions, saccades, covariances2D, covariancesSacc
+
+    def initialize_submodules_duration(self):
+        # Input of dimension (n_batches, len_sequence, d_in)
+
+        # First embedding
+        self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
+
+        # Project the gpt-2 embeddings onto a lower-dimensional space
+        self.gptProjector = gptProjector_dur(dropout=self.dropout)
+        #self.gptProjector = gptProjector(dropout=self.dropout * 2.5)
+
+        # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
+        # Then attention (keep it one-headed)
+        self.attention_layers = nn.ModuleList([
+            TransformerBlockMultiHeadAttn(self.d_model, self.H, self.dropout)
+            for _ in range(self.n_layers)
+        ])
+
+        self.get_weights = nn.Linear(in_features=self.d_model, out_features=self.n_admixture_components)
+        self.get_durations = nn.Linear(in_features=self.d_model, out_features = self.n_admixture_components)
+        self.get_std = CovDurHead(d_model=self.d_model, admixture_components=self.n_admixture_components)
+
+    
+    def forward_durations(self, x):
+        # Input of dimension (n_batches, len_sequence, d_in)
+        empty_fix = x[:, :, -1]
+        lm_emb = x[:, :, -1-768:-1]
+        features = x[:, :, :-1-768]
+        
+        gpt_emb = self.gptProjector(lm_emb)
+        gpt_emb = gpt_emb * (1 - empty_fix).unsqueeze(-1)
+
+        input_before_embedding = torch.cat(
+            [features, gpt_emb, empty_fix.unsqueeze(-1)],
+            dim=-1
+        )
+
+        embeddings = self.input_proj(input_before_embedding) # (n_batches, len_sequence, d_model)
+
+        #embeddings = self.positional_enc.forward(embeddings)
+
+        # Go through the attention layers
+        hidden_states = embeddings
+        for attention_layer in self.attention_layers:
+            hidden_states = attention_layer(hidden_states) # (n_batches, len_sequence, d_model)
+
+        weights_scores = self.get_weights(hidden_states) # (n_batches, len_sequence, n_admixture_components)
+        weights = weights_scores.softmax(dim=-1)
+        durations = self.get_durations(hidden_states)
+        std = self.get_std(hidden_states)
+
+        return weights, durations, std
+        
     
 
 class TransformerCovLM_conv(TransformerCovLM):
@@ -181,12 +236,12 @@ class TransformerCovLM_conv(TransformerCovLM):
         self.input_proj = nn.Linear(in_features=self.d_in, out_features=self.d_model)
 
         # Project the gpt-2 embeddings onto a lower-dimensional space
-        self.gptProjector = gptProjector_fused()
+        self.gptProjector = gptProjector_fused(dropout=self.dropout)
 
         # Input to the attention layers of dimension (n_baches, len_sequence, d_model)
         # Then attention (keep it one-headed)
         self.attention_layers = nn.ModuleList([
-            TransformerBlockMultiHeadAttn(self.d_model, self.H)
+            TransformerBlockMultiHeadAttn(self.d_model, self.H, self.dropout)
             for _ in range(self.n_layers)
         ])
 

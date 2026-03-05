@@ -3,7 +3,7 @@ import numpy as np
 import json
 import time
 
-from spatio_temporal_reading.loss.loss import NegLogLikelihood, NegLogLikelihoodCov
+from spatio_temporal_reading.loss.loss_dur import NegLogLikelihood, NegLogLikelihoodCov
 
 class Trainer:
 
@@ -35,12 +35,9 @@ class Trainer:
         with open(datapath / "variances.json", "r") as f:
             variances = json.load(f)
 
-        var_x = variances["var_x"]
-        var_y = variances["var_y"]
-        var_sacc = variances["var_sacc"]
+        var_dur = variances["var_dur"]
 
-        self.var_pos = torch.tensor([[var_x, 0], [0, var_y]], device=self.device, dtype=torch.float32)
-        self.std_sacc = torch.tensor([np.sqrt(var_sacc)], device=self.device, dtype=torch.float32)
+        self.std_dur = torch.tensor([np.sqrt(var_dur)], device=self.device, dtype=torch.float32)
 
     def _sync_cuda(self):
         if self.device == "cuda":
@@ -60,29 +57,25 @@ class Trainer:
                 self.optimizer.zero_grad(set_to_none=True)
 
                 # Unpack the item
-                input_model, positions_target, saccades_target = item
+                input_model, durations_target = item
                 input_model = input_model.to(self.device, non_blocking=self.non_blocking)
-                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
-                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
-
+                durations_target = durations_target.to(self.device, non_blocking=self.non_blocking)
+                
                 self._sync_cuda()
                 fwd_start = time.perf_counter()
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    weights, positions_model, saccades_model = self.model(input_model)
+                    weights, durations_model = self.model(input_model)
 
                     loss = NegLogLikelihood(
                         weights=weights,
-                        positions_model=positions_model,
-                        saccades_model=saccades_model,
-                        positions=positions_target,
-                        saccades=saccades_target,
-                        cov_pos=self.var_pos,
-                        std_sacc=self.std_sacc
+                        durations_model=durations_model,
+                        durations_target=durations_target,
+                        std_dur=self.std_dur
                     )
                 self._sync_cuda()
                 fwd_times.append(time.perf_counter() - fwd_start)
 
-                losses_epoch.append(loss.item() / positions_model.shape[1])
+                losses_epoch.append(loss.item() / durations_model.shape[1])
 
                 self._sync_cuda()
                 bwd_start = time.perf_counter()
@@ -132,25 +125,21 @@ class Trainer:
 
         with torch.no_grad():
             for i, item in enumerate(self.val_loader):
-                input_model, positions_target, saccades_target = item
+                input_model, durations_target = item
                 input_model = input_model.to(self.device, non_blocking=self.non_blocking)
-                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
-                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
+                durations_target = durations_target.to(self.device, non_blocking=self.non_blocking)
 
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    weights, positions_model, saccades_model = self.model(input_model)
+                    weights, durations_model = self.model(input_model)
 
                     loss = NegLogLikelihood(
                         weights=weights,
-                        positions_model=positions_model,
-                        saccades_model=saccades_model,
-                        positions=positions_target,
-                        saccades=saccades_target,
-                        cov_pos=self.var_pos,
-                        std_sacc=self.std_sacc
+                        durations_model=durations_model,
+                        durations_target=durations_target,
+                        std_dur=self.std_dur
                     )
 
-                losses.append(loss.item() / positions_model.shape[1])
+                losses.append(loss.item() / durations_model.shape[1])
 
         return np.array(losses).mean()
     
@@ -169,29 +158,26 @@ class TrainerCov(Trainer):
                 self.optimizer.zero_grad(set_to_none=True)
 
                 # Unpack the item
-                input_model, positions_target, saccades_target = item
+                input_model, durations_target = item
                 input_model = input_model.to(self.device, non_blocking=self.non_blocking)
-                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
-                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
+                durations_target = durations_target.to(self.device, non_blocking=self.non_blocking)
 
                 self._sync_cuda()
                 fwd_start = time.perf_counter()
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
+                    weights, durations_model, std = self.model(input_model)
 
                     loss = NegLogLikelihoodCov(
-                        covariances2D=covariances2D,
-                        covariancesSacc=covariancesSacc,
                         weights=weights,
-                        positions_model=positions_model,
-                        saccades_model=saccades_model,
-                        positions=positions_target,
-                        saccades=saccades_target
+                        durations_model=durations_model,
+                        durations_target=durations_target,
+                        std=std,
+                        std_dur=self.std_dur
                     )
                 self._sync_cuda()
                 fwd_times.append(time.perf_counter() - fwd_start)
 
-                losses_epoch.append(loss.item() / positions_model.shape[1])
+                losses_epoch.append(loss.item() / durations_model.shape[1])
 
                 self._sync_cuda()
                 bwd_start = time.perf_counter()
@@ -241,24 +227,21 @@ class TrainerCov(Trainer):
 
         with torch.no_grad():
             for i, item in enumerate(self.val_loader):
-                input_model, positions_target, saccades_target = item
+                input_model, durations_target = item
                 input_model = input_model.to(self.device, non_blocking=self.non_blocking)
-                positions_target = positions_target.to(self.device, non_blocking=self.non_blocking)
-                saccades_target = saccades_target.to(self.device, non_blocking=self.non_blocking)
+                durations_target = durations_target.to(self.device, non_blocking=self.non_blocking)
 
                 with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    weights, positions_model, saccades_model, covariances2D, covariancesSacc = self.model(input_model)
+                    weights, durations_model, std = self.model(input_model)
 
                     loss = NegLogLikelihoodCov(
-                        covariances2D=covariances2D,
-                        covariancesSacc=covariancesSacc,
                         weights=weights,
-                        positions_model=positions_model,
-                        saccades_model=saccades_model,
-                        positions=positions_target,
-                        saccades=saccades_target
+                        durations_model=durations_model,
+                        durations_target=durations_target,
+                        std=std,
+                        std_dur=self.std_dur
                     )
 
-                losses.append(loss.item() / positions_model.shape[1])
+                losses.append(loss.item() / durations_model.shape[1])
 
         return np.array(losses).mean()

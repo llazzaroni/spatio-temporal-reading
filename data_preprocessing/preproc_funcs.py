@@ -81,11 +81,13 @@ def compute_variances(meco_df) -> dict:
 
     var_x = meco_df[valid]["dx"].var()
     var_y = meco_df[valid]["dy"].var()
-    var_sacc = meco_df[valid]["saccade"].var()
+    var_sacc = np.log(meco_df[valid]["saccade"]).var()
+    var_dur = np.log(meco_df[valid]["dur"]).var()
     return {
         "var_x": var_x,
         "var_y": var_y,
         "var_sacc": var_sacc,
+        "var_dur": var_dur
     }
 
 

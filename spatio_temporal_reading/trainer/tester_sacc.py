@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import json
 
-from spatio_temporal_reading.loss.loss import NegLogLikelihood, NegLogLikelihood_np, NegLogLikelihoodCov_np
+from spatio_temporal_reading.loss.loss_sacc import NegLogLikelihood, NegLogLikelihood_np, NegLogLikelihoodCov_np
 
 class Tester:
 

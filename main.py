@@ -25,12 +25,20 @@ def main(args):
         from exploration import exploration
         exploration.make_plots(datapath, outputpath)
     if args.train:
-        from spatio_temporal_reading import train
-        train.main(
-            datapath=datapath,
-            outputpath=outputpath,
-            args=args
-        )
+        if args.model_type == "durations":
+            from spatio_temporal_reading import train_dur
+            train_dur.main(
+                datapath=datapath,
+                outputpath=outputpath,
+                args=args
+            )
+        else:
+            from spatio_temporal_reading import train_sacc
+            train_sacc.main(
+                datapath=datapath,
+                outputpath=outputpath,
+                args=args
+            )
     if args.train_baseline:
         from spatio_temporal_reading.launchers.baseline import grid_search_baseline
         grid_search_baseline.main(datapath)        
@@ -38,11 +46,18 @@ def main(args):
         from spatio_temporal_reading import visualize_sequence
         visualize_sequence.main(datapath, checkpoint_path, outputpath, args)
     if args.test:
-        from spatio_temporal_reading import test
-        test.main(
-            datapath=datapath,
-            args=args
-        )
+        if args.model_type == "saccades":
+            from spatio_temporal_reading import test_sacc
+            test_sacc.main(
+                datapath=datapath,
+                args=args
+            )
+        else:
+            from spatio_temporal_reading import test_dur
+            test_dur.main(
+                datapath=datapath,
+                args=args
+            )
     if args.test_baseline:
         from spatio_temporal_reading import test_baseline
         test_baseline.main(
@@ -65,7 +80,7 @@ if __name__ == "__main__":
     p.add_argument("--visualize-model", default=False, action="store_true")
     p.add_argument("--train_index", type=int, default=0)
     p.add_argument("--val_index", type=int, default=0)
-    p.add_argument("--model-type", type=str, default="saccade")
+    p.add_argument("--model-type", type=str, default="saccades")
     p.add_argument("--n-layers", type=int, default=3)
     p.add_argument("--d-model", type=int, default=30)
     p.add_argument("--heads", type=int, default=5)
@@ -84,5 +99,6 @@ if __name__ == "__main__":
     p.add_argument("--augment", default=False, action="store_true")
     p.add_argument("--cov", default=False, action="store_true")
     p.add_argument("--conv", default=False, action="store_true")
+    p.add_argument("--dropout", default=0.0)
     args = p.parse_args()
     main(args)

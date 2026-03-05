@@ -207,10 +207,10 @@ def main(datapath):
         
         for batch_size in batch_sizes:
 
-            ########################## REMOVE WHEN TRAINING ALSO DURATIONS ##########################
-            if model["model_type"] == "duration":
+            ########################## REMOVE WHEN TRAINING BOTH DURATIONS AND SACCADES ##########################
+            if model["model_type"] == "saccade":
                 continue
-            ########################## REMOVE WHEN TRAINING ALSO DURATIONS ##########################
+            ########################## REMOVE WHEN TRAINING BOTH DURATIONS AND SACCADES ##########################
 
             if model["model_type"] == "duration" and batch_size != 128:
                 continue
