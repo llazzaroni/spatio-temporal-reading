@@ -16,7 +16,7 @@ class SimpleModel(nn.Module):
     ):
         super().__init__()
 
-        self.model_type = model_type
+        self.model_type = self._normalize_model_type(model_type)
         self.d_in = d_in
         self.d_model = d_model
         self.n_layers = n_layers
@@ -25,6 +25,15 @@ class SimpleModel(nn.Module):
         self.H = H
         self.dropout = dropout
         self.initialize_submodules()
+
+    @staticmethod
+    def _normalize_model_type(model_type):
+        model_type_norm = str(model_type).lower()
+        if model_type_norm in ("saccade", "saccades"):
+            return "saccades"
+        if model_type_norm in ("duration", "durations"):
+            return "durations"
+        raise ValueError(f"Unknown model_type: {model_type}")
 
     def initialize_submodules(self):
         if self.model_type == "saccades":
