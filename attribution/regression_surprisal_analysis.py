@@ -24,7 +24,9 @@ Example::
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 import json
+import multiprocessing
 import os
 from pathlib import Path
 
@@ -195,6 +197,21 @@ def conditional_regression_probability(
     return (numerator / denominator if denominator > 1e-12 else np.nan), numerator, denominator, reg_mass, primary_mass
 
 
+def integrate_probability_variants(payload):
+    """CPU-worker entry point for all baseline/counterfactual probabilities.
+
+    Keeping this at module scope makes it pickleable for spawn-safe worker
+    processes.  It deliberately contains no Torch/CUDA objects.
+    """
+    regression_rectangles, primary_rectangles, previous_x, previous_y, parameter_sets = payload
+    return [
+        conditional_regression_probability(
+            weights, means, covariances, regression_rectangles, primary_rectangles, previous_x, previous_y
+        )
+        for weights, means, covariances in parameter_sets
+    ]
+
+
 def session_labels(labels: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame:
     keep = [
         "text", "reader", "fixid", "behavioral_label", "is_consecutive_original_fixation",
@@ -351,8 +368,15 @@ def main(args: argparse.Namespace) -> None:
         unit="event",
         disable=not args.progress,
     )
+    # SciPy's bivariate-normal CDF is CPU-only.  A spawn-safe pool avoids
+    # forking an already-initialised CUDA process.
+    executor = (
+        ProcessPoolExecutor(max_workers=args.integration_workers, mp_context=multiprocessing.get_context("spawn"))
+        if args.integration_workers > 1 else None
+    )
 
-    with torch.no_grad():
+    try:
+      with torch.no_grad():
         for item_index, item in enumerate(tqdm(dataset.items, desc="Held-out scanpaths", unit="scanpath", disable=not args.progress)):
             text, reader = item[:2]
             inputs, _, _ = dataset[item_index]
@@ -388,32 +412,44 @@ def main(args: argparse.Namespace) -> None:
                     batch[plus_rows, indices, column] += training_stats[name]["sd"]
                     batch[minus_rows, indices, column] -= training_stats[name]["sd"]
                 plus_minus = model(batch)
+                # Select only the outputs needed at target positions before
+                # moving them to CPU.  This is far cheaper than copying whole
+                # padded scanpaths and lets workers integrate independently.
+                base_selected = tuple(output[indices].detach().cpu().numpy() for output in (baseline[0][0], baseline[1][0], baseline[3][0]))
+                variant_selected = {}
+                for predictor_index, name in enumerate(LINGUISTIC_PREDICTORS):
+                    plus_rows = predictor_index * 2 * event_count + np.arange(event_count)
+                    minus_rows = predictor_index * 2 * event_count + event_count + np.arange(event_count)
+                    variant_selected[name] = (
+                        tuple(output[plus_rows, indices].detach().cpu().numpy() for output in (plus_minus[0], plus_minus[1], plus_minus[3])),
+                        tuple(output[minus_rows, indices].detach().cpu().numpy() for output in (plus_minus[0], plus_minus[1], plus_minus[3])),
+                    )
+                rows_and_payloads = []
                 for local, target in enumerate(indices):
                     row = frame.iloc[target].copy()
                     regression_rectangles, primary_rectangles = regions.rectangles(row)
                     if not len(primary_rectangles):
                         continue
-                    def probability(outputs, batch_index: int, event_index: int):
-                        weights, means, _, covariances, _ = outputs
-                        return conditional_regression_probability(
-                            weights[batch_index, event_index].cpu().numpy(),
-                            means[batch_index, event_index].cpu().numpy(),
-                            covariances[batch_index, event_index].cpu().numpy(),
-                            regression_rectangles, primary_rectangles, row.previous_x, row.previous_y,
-                        )
-                    base_p, base_num, base_den, base_reg_mass, base_primary_mass = probability(baseline, 0, target)
+                    parameter_sets = [tuple(values[local] for values in base_selected)]
+                    for name in LINGUISTIC_PREDICTORS:
+                        parameter_sets.extend(tuple(values[local] for values in selected) for selected in variant_selected[name])
+                    rows_and_payloads.append((row, (regression_rectangles, primary_rectangles, float(row.previous_x), float(row.previous_y), parameter_sets)))
+                payloads = [payload for _, payload in rows_and_payloads]
+                results = list(executor.map(integrate_probability_variants, payloads)) if executor else [integrate_probability_variants(payload) for payload in payloads]
+                for (row, payload), probabilities in zip(rows_and_payloads, results):
+                    base_p, base_num, base_den, base_reg_mass, base_primary_mass = probabilities[0]
                     row["model_regression_probability"] = base_p
                     row["model_regression_numerator"] = base_num
                     row["model_primary_denominator"] = base_den
                     for predictor_index, name in enumerate(LINGUISTIC_PREDICTORS):
-                        plus_row = predictor_index * 2 * event_count + local
-                        minus_row = predictor_index * 2 * event_count + event_count + local
-                        plus_p, _, _, _, _ = probability(plus_minus, plus_row, target)
-                        minus_p, _, _, _, _ = probability(plus_minus, minus_row, target)
+                        plus_p = probabilities[1 + 2 * predictor_index][0]
+                        minus_p = probabilities[2 + 2 * predictor_index][0]
                         row[f"model_probability_{name}_plus_1sd"] = plus_p
                         row[f"model_probability_{name}_minus_1sd"] = minus_p
                         row[f"model_effect_{name}_per_sd"] = (plus_p - minus_p) / 2
-                    base_weights = baseline[0][0, target].cpu().numpy()
+                    # The baseline mixture weights are the first member of this
+                    # event's parameter tuple, retained for component audits.
+                    base_weights = payload[4][0][0]
                     for component in range(len(base_weights)):
                         row[f"prior_weight_{component}"] = base_weights[component]
                         row[f"regression_region_mass_{component}"] = base_reg_mass[component]
@@ -421,7 +457,10 @@ def main(args: argparse.Namespace) -> None:
                     event_frames.append(pd.DataFrame([row]))
                     processed_targets += 1
                     event_progress.update(1)
-    event_progress.close()
+    finally:
+      if executor is not None:
+        executor.shutdown(wait=True)
+      event_progress.close()
 
     events = pd.concat(event_frames, ignore_index=True)
     events = prepare_empirical_controls(events, raw, training_stats)
@@ -492,6 +531,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--bootstrap-replicates", type=int, default=500)
     parser.add_argument("--bootstrap-seed", type=int, default=20261029)
+    parser.add_argument(
+        "--integration-workers", type=int,
+        default=int(os.environ.get("SLURM_CPUS_PER_TASK", min(8, os.cpu_count() or 1))),
+        help="CPU processes for exact Gaussian-region integrations (default: SLURM_CPUS_PER_TASK, else up to 8).",
+    )
     parser.add_argument("--max-events", type=int, help="Debug option: stop after this many eligible events.")
     parser.add_argument("--progress", action=argparse.BooleanOptionalAction, default=True, help="Show tqdm progress bars (default: true).")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto", help="Inference device; auto selects CUDA when available.")
