@@ -115,9 +115,95 @@ def compute_means_sacc_filtered(args):
 
     return means
 
+def compute_means_sacc_raw(args):
+    datadir = Path(args.data)
 
-def baseline_tensor_sacc(datadir, length_seq, input_model):
-    path = datadir / "means_sacc_filtered.json"
+    train_ds = MecoDataset(mode="train", filtering="raw", datadir=datadir)
+
+    dataloader_kwargs = dict(
+        batch_size=1,
+        num_workers=1,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+
+    train_loader = DataLoader(
+        train_ds,
+        shuffle=True,
+        **dataloader_kwargs,
+    )
+
+    lengths = []
+    dx_avgs = []
+    dy_avgs = []
+    dur_avgs = []
+    start_avgs = []
+    reader_indices = []
+
+    for i, item in enumerate(train_loader):
+        input_model, positions_target, saccades_target = item
+
+        # We compute means on input_model[:, 1:, ...], so weights must match that length.
+        lengths.append(input_model.shape[1] - 1)
+
+        history_points = input_model[:, 1:, :2].squeeze(0)
+        history_points_mean = history_points.mean(dim=0)
+        dx_avgs.append(history_points_mean[0].item())
+        dy_avgs.append(history_points_mean[1].item())
+
+        durations = input_model[:, 1:, 2].squeeze(0).squeeze(-1)
+        durations_mean = durations.mean().item()
+        dur_avgs.append(durations_mean)
+
+        start = input_model[:, 1:, 3].squeeze(0).squeeze(-1)
+        start_mean = start.mean().item()
+        start_avgs.append(start_mean)
+
+        reader_idx = input_model[:, 1:, 4:-9].squeeze(0).mean(dim=0)
+        reader_indices.append(reader_idx.detach().cpu().numpy())
+
+
+    lengths = np.array(lengths, dtype=float)
+    dx_avgs = np.array(dx_avgs, dtype=float)
+    dy_avgs = np.array(dy_avgs, dtype=float)
+    dur_avgs = np.array(dur_avgs, dtype=float)
+    start_avgs = np.array(start_avgs, dtype=float)
+    reader_indices = np.array(reader_indices, dtype=float)
+
+    dx_mean = np.average(dx_avgs, weights=lengths)
+    dy_mean = np.average(dy_avgs, weights=lengths)
+    dur_mean = np.average(dur_avgs, weights=lengths)
+    start_mean = np.average(start_avgs, weights=lengths)
+    reader_indices_mean = np.average(reader_indices, axis=0, weights=lengths)
+
+    filtered_means_path = datadir / "means_sacc_filtered.json"
+    with filtered_means_path.open("r") as f:
+        filtered_means = json.load(f)
+
+    means = {
+        "dx_mean": float(dx_mean),
+        "dy_mean": float(dy_mean),
+        "dur_mean": float(dur_mean),
+        "start_mean": float(start_mean),
+        "reader_indices_mean": reader_indices_mean.tolist(),
+        "char_level_surp_mean": float(filtered_means["char_level_surp_mean"]),
+        "word_level_surp_mean": float(filtered_means["word_level_surp_mean"]),
+        "len_mean": float(filtered_means["len_mean"]),
+        "freq_mean": float(filtered_means["freq_mean"]),
+    }
+
+    output_path = datadir / "means_sacc_raw.json"
+    with output_path.open("w") as f:
+        json.dump(means, f, indent=2)
+
+    return means
+
+
+def baseline_tensor_sacc(datadir, length_seq, input_model, args):
+    if args.filtering == "filtered":
+        path = datadir / "means_sacc_filtered.json"
+    else:
+        path = datadir / "means_sacc_raw.json"
     with path.open("r") as f:
         means = json.load(f)
     reader_vec = input_model[0, 0, 4:-9].detach().cpu().tolist()

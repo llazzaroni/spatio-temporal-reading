@@ -88,11 +88,24 @@ def main(args):
             -losses["BASE_SHP_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
         )
     
-        transformer_raw_rme = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+        #transformer_raw_rme = bootstrap_mean_difference(
+        #    -losses["TRANSFORMER_RAW"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+        #)
+        #transformer_filtered_rme = bootstrap_mean_difference(
+        #    -losses["TRANSFORMER_FILTERED"], -losses["poisson_filtered_baseline"], N=1000, reduce=True
+        #)
+
+        transformer_filtered_cov = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED_COV"], -losses["poisson_filtered_baseline"], N=1000, reduce=True
         )
-        transformer_filtered_rme = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED"], -losses["poisson_filtered_baseline"], N=1000, reduce=True
+        transformer_raw_cov = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW_COV"], -losses["poisson_raw_baseline"], N=1000, reduce=True
+        )
+        transformer_filtered_cov_lm = bootstrap_mean_difference(
+            -losses["TRANSFORMER_FILTERED_COV_LM"], -losses["TRANSFORMER_FILTERED_COV"], N=1000, reduce=True
+        )
+        transformer_raw_cov_lm = bootstrap_mean_difference(
+            -losses["TRANSFORMER_RAW_COV_LM"], -losses["TRANSFORMER_RAW_COV"], N=1000, reduce=True
         )
 
         plot_llr_violins(
@@ -105,8 +118,8 @@ def main(args):
                 eff_css_bstrp_raw,
                 eff_rme_css_bstrp,
                 eff_rme_css_bstrp_raw,
-                transformer_filtered_rme,
-                transformer_raw_rme
+                transformer_filtered_cov,
+                transformer_raw_cov
             ],
             labels=[
                 "Last \n Fix",
@@ -124,41 +137,26 @@ def main(args):
             y_label="Delta Log-Likelihood Per Fixation w.r.t. poisson",
             save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_poisson.png",
             fig_size=(10, 6),
-            step=0.25,
+            step=0.5,
             dpi=1200,
         )
         
-        transformer_filtered_cov = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_COV"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_raw_cov = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_COV"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
-        )
-        transformer_filtered_cov_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_FILTERED_COV_LM"], -losses["TRANSFORMER_FILTERED"], N=1000, reduce=True
-        )
-        transformer_raw_cov_lm = bootstrap_mean_difference(
-            -losses["TRANSFORMER_RAW_COV_LM"], -losses["TRANSFORMER_RAW"], N=1000, reduce=True
-        )
+        
 
         plot_llr_violins(
             [
-                transformer_filtered_cov,
-                transformer_raw_cov,
                 transformer_filtered_cov_lm,
                 transformer_raw_cov_lm
             ],
             labels=[
-                "Transf Cov",
-                "Transf Cov \n (Raw)",
-                "Transf LM Cov",
-                "Transf LM Cov \n (Raw)"
+                "Transf LM",
+                "Transf LM \n (Raw)"
             ],
             title="Bootstrap Estimates of Log-Likelihood Gains on Test Set",
             y_label="Delta Log-Likelihood Per Fixation w.r.t. transformer baseline",
             save_path=Path(__file__).resolve().parent / "saccade_evaluation_wrt_transformer_cov.png",
             fig_size=(10, 6),
-            step=0.5,
+            step=0.05,
             dpi=1200,
         )
 

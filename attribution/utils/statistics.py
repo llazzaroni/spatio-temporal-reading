@@ -87,4 +87,64 @@ def one_sample_sacc(input_model, input_baseline, t_idx, model):
         tot_contributions[-7].item(),
         tot_contributions[-6].item(),
     ]
+
+def one_sample_posx_raw(input_model, input_baseline, t_idx, model):
+    attr = get_attr_posx_E(input_model, input_baseline, t_idx, model)
+    tot_contributions = attr.squeeze(0).abs().sum(dim=0)
+    div = tot_contributions.sum().item()
+    tot_contributions /= div
+    tot_contributions_nan = 0
+    for i in range(4):
+        tot_contributions_nan += tot_contributions[-5 + i].item()
+    return [
+        tot_contributions[0].item(),
+        tot_contributions[1].item(),
+        tot_contributions[2].item(),
+        tot_contributions[3].item(),
+        tot_contributions[-9].item(),
+        tot_contributions[-8].item(),
+        tot_contributions[-7].item(),
+        tot_contributions[-6].item(),
+        tot_contributions_nan
+    ]
+
+def one_sample_posy_raw(input_model, input_baseline, t_idx, model):
+    attr = get_attr_posy_E(input_model, input_baseline, t_idx, model)
+    tot_contributions = attr.squeeze(0).abs().sum(dim=0)
+    div = tot_contributions.sum().item()
+    tot_contributions /= div
+    tot_contributions_nan = 0
+    for i in range(4):
+        tot_contributions_nan += tot_contributions[-5 + i].item()
+    return [
+        tot_contributions[0].item(),
+        tot_contributions[1].item(),
+        tot_contributions[2].item(),
+        tot_contributions[3].item(),
+        tot_contributions[-9].item(),
+        tot_contributions[-8].item(),
+        tot_contributions[-7].item(),
+        tot_contributions[-6].item(),
+        tot_contributions_nan
+    ]
+
+def one_sample_sacc_raw(input_model, input_baseline, t_idx, model):
+    attr = get_attr_sacc_E(input_model, input_baseline, t_idx, model)
+    tot_contributions = attr.squeeze(0).abs().sum(dim=0)
+    div = tot_contributions.sum().item()
+    tot_contributions /= div
+    tot_contributions_nan = 0
+    for i in range(4):
+        tot_contributions_nan += tot_contributions[-5 + i].item()
+    return [
+        tot_contributions[0].item(),
+        tot_contributions[1].item(),
+        tot_contributions[2].item(),
+        tot_contributions[3].item(),
+        tot_contributions[-9].item(),
+        tot_contributions[-8].item(),
+        tot_contributions[-7].item(),
+        tot_contributions[-6].item(),
+        tot_contributions_nan
+    ]
     

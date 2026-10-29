@@ -7,14 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from attribution.utils.compute_means import compute_means_sacc_filtered
+from attribution.utils.compute_means import compute_means_sacc_filtered, compute_means_sacc_raw
 from attribution.eval_model.compute_attr import compute_attr
 
 def main(args):
     if args.compute_means:
         if not args.augment:
             if args.model_type == "saccades":
-                compute_means_sacc_filtered(args)
+                if args.filtering == "filtered":
+                    compute_means_sacc_filtered(args)
+                else:
+                    compute_means_sacc_raw(args)
             else:
                 raise NotImplementedError
         else:
