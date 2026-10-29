@@ -25,7 +25,7 @@ from tqdm.auto import tqdm
 
 from attribution.behavioral_responsibilities import checkpoint_model
 from attribution.regression_surprisal_analysis import (
-    GeometryRegions, LINGUISTIC_PREDICTORS, PRIMARY, session_labels,
+    GeometryRegions, LINGUISTIC_PREDICTORS, PRIMARY, PARTITION_BEHAVIOURS, session_labels,
     rectangle_mass,
 )
 from spatio_temporal_reading.data.data import MecoDataset
@@ -83,7 +83,8 @@ def main(args):
     dataset = dataset_type(mode="test", filtering="raw", datadir=args.data)
     stats, correlations, inverse_covariance = training_statistics(dataset_type, args.data, uses_lm)
     labels = pd.read_csv(args.labels)
-    regions = GeometryRegions(pd.read_csv(args.texts), args.vertical_threshold, args.return_position_threshold)
+    regions = GeometryRegions(pd.read_csv(args.texts), args.vertical_threshold, args.return_position_threshold, mode=args.geometry_mode)
+    behaviors = PARTITION_BEHAVIOURS if args.geometry_mode == "partition" else PRIMARY
     feature_start = 4 + len(dataset.reader_to_idx)
     offsets = [spec["input_offset"] for spec in LINGUISTIC_PREDICTORS.values()]
     mask_offsets = [4, 5, 7]
@@ -132,7 +133,7 @@ def main(args):
                     probability_results = list(executor.map(behavior_probabilities, payloads)) if executor else [behavior_probabilities(payload) for payload in payloads]
                     for (row, _, target), probabilities in zip(rows_payloads, probability_results):
                         original, plus, minus = probabilities
-                        for behavior in PRIMARY:
+                        for behavior in behaviors:
                             row[f"probability_{behavior}"] = original[behavior]
                             row[f"probability_{behavior}_high"] = plus[behavior]
                             row[f"probability_{behavior}_low"] = minus[behavior]
@@ -147,7 +148,7 @@ def main(args):
             executor.shutdown(wait=True)
     events = pd.concat(events, ignore_index=True)
     events["scanpath"] = events.text.astype(str) + "::" + events.reader.astype(str)
-    sensitivity_sum = events[[f"sensitivity_{behavior}" for behavior in PRIMARY]].sum(axis=1)
+    sensitivity_sum = events[[f"sensitivity_{behavior}" for behavior in behaviors]].sum(axis=1)
     z = events[[f"prior_z_{name}" for name in LINGUISTIC_PREDICTORS]].to_numpy()
     mahalanobis_high = np.einsum("ij,jk,ik->i", z + 1, inverse_covariance, z + 1)
     mahalanobis_low = np.einsum("ij,jk,ik->i", z - 1, inverse_covariance, z - 1)
@@ -156,10 +157,10 @@ def main(args):
     bootstrap = []
     for _ in tqdm(range(args.bootstrap_replicates), desc="Scanpath bootstrap", disable=not args.progress):
         counts = np.bincount(rng.integers(len(names), size=len(names)), minlength=len(names))
-        bootstrap.append({behavior: float(np.average(events[f"sensitivity_{behavior}"], weights=counts[codes])) for behavior in PRIMARY})
+        bootstrap.append({behavior: float(np.average(events[f"sensitivity_{behavior}"], weights=counts[codes])) for behavior in behaviors})
     bootstrap = pd.DataFrame(bootstrap)
     summary_rows = []
-    for behavior in PRIMARY:
+    for behavior in behaviors:
         summary_rows.append({"behavior": behavior, "mean_sensitivity": events[f"sensitivity_{behavior}"].mean(), "ci_lower": bootstrap[behavior].quantile(.025), "ci_upper": bootstrap[behavior].quantile(.975)})
     summary_table = pd.DataFrame(summary_rows)
     figure, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
@@ -176,7 +177,7 @@ def main(args):
     events.to_csv(output / "joint_linguistic_behavior_events.csv", index=False)
     summary_table.to_csv(output / "joint_linguistic_behavior_summary.csv", index=False)
     bootstrap.to_csv(output / "joint_linguistic_behavior_bootstrap.csv", index=False)
-    summary = {"checkpoint": str(Path(checkpoint).resolve()), "device": str(device), "included_events": len(events), "training_feature_statistics": stats, "mean_abs_probability_conservation_error": float(sensitivity_sum.abs().mean()), "mean_mahalanobis_distance_high": float(mahalanobis_high.mean()), "mean_mahalanobis_distance_low": float(mahalanobis_low.mean())}
+    summary = {"checkpoint": str(Path(checkpoint).resolve()), "device": str(device), "geometry_mode": args.geometry_mode, "included_events": len(events), "training_feature_statistics": stats, "mean_abs_probability_conservation_error": float(sensitivity_sum.abs().mean()), "mean_mahalanobis_distance_high": float(mahalanobis_high.mean()), "mean_mahalanobis_distance_low": float(mahalanobis_low.mean())}
     (output / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
 
@@ -190,6 +191,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--vertical-threshold", type=float, default=.5)
     parser.add_argument("--return-position-threshold", type=float, default=.5)
+    parser.add_argument("--geometry-mode", choices=["word_box", "partition"], default="word_box", help="Experimental continuous page partition; default retains word-box definitions.")
     parser.add_argument("--perturbation-batch-size", type=int, default=16)
     parser.add_argument("--integration-workers", type=int, default=int(os.environ.get("SLURM_CPUS_PER_TASK", min(8, os.cpu_count() or 1))))
     parser.add_argument("--bootstrap-replicates", type=int, default=1000)

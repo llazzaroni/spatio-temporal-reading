@@ -53,6 +53,7 @@ DATA_DIR = ROOT / "data"
 DEFAULT_LABELS = DATA_DIR / "hp_augmented_meco_100_1000_1_10_model_filtered_behavioral_labels.csv"
 TEXTS = DATA_DIR / "hp_eng_texts_100_1000_1_10.csv"
 PRIMARY = ("forward", "skip", "refixation", "regression", "line_return")
+PARTITION_BEHAVIOURS = (*PRIMARY, "cross_line_other")
 LINGUISTIC_PREDICTORS = {
     "word_surprisal": {"raw": "word_level_surprisal", "missing": "word_level_surprisal_nan", "input_offset": 1, "label": "Word surprisal"},
     "char_surprisal": {"raw": "char_level_surp", "missing": "char_level_surp_nan", "input_offset": 0, "label": "Character surprisal"},
@@ -68,13 +69,14 @@ def _normalise_text(value: object) -> int:
 class GeometryRegions:
     """Construct prospective primary/regression landing rectangles from layout."""
 
-    def __init__(self, texts: pd.DataFrame, vertical_threshold: float = .5, return_threshold: float = .5):
+    def __init__(self, texts: pd.DataFrame, vertical_threshold: float = .5, return_threshold: float = .5, mode: str = "word_box"):
         ranks, centres, spacing = text_layout(texts)
         self.ranks = ranks.reset_index()
         self.centres = centres
         self.spacing = spacing
         self.vertical_threshold = vertical_threshold
         self.return_threshold = return_threshold
+        self.mode = mode
         words = texts.loc[texts["ianum_word"].notna(), [
             "text_id", "line", "ianum_word", "word_bbox_x1", "word_bbox_x2",
             "word_bbox_y1", "word_bbox_y2",
@@ -86,6 +88,16 @@ class GeometryRegions:
         words = words.merge(self.ranks, on=["text_id", "line", "ianum_word"], validate="one_to_one")
         words["line_center_y"] = words.set_index(["text_id", "line"]).index.map(self.centres)
         self.words = {int(text): group.reset_index(drop=True) for text, group in words.groupby("text_id")}
+        self.page_bounds, self.line_bands = {}, {}
+        for text, group in texts.groupby("text_id"):
+            text = int(text)
+            self.page_bounds[text] = (group["bbox_x1"].min(), group["bbox_x2"].max(), group["bbox_y1"].min(), group["bbox_y2"].max())
+            lines = sorted((int(line), float(center)) for (tid, line), center in self.centres.items() if int(tid) == text)
+            self.line_bands[text] = {
+                line: (self.page_bounds[text][2] if index == 0 else (center + lines[index - 1][1]) / 2,
+                       self.page_bounds[text][3] if index == len(lines) - 1 else (center + lines[index + 1][1]) / 2)
+                for index, (line, center) in enumerate(lines)
+            }
 
     def rectangles(self, row: pd.Series) -> dict[str, np.ndarray]:
         """Return non-overlapping absolute-coordinate rectangles by behaviour.
@@ -94,8 +106,10 @@ class GeometryRegions:
         the previous fixation, a proposed landing coordinate, and the fixed
         text geometry.  The three-fixation audit flag is intentionally absent.
         """
+        if self.mode == "partition":
+            return self.partition_rectangles(row)
         if not bool(row["previous_word_assignment_reliable"]):
-            return {behaviour: np.empty((0, 4)) for behaviour in PRIMARY}
+            return {behaviour: np.empty((0, 4)) for behaviour in PARTITION_BEHAVIOURS}
         text = _normalise_text(row["text"])
         previous_line = row["previous_line"]
         previous_word = row["previous_ianum_word"]
@@ -105,9 +119,9 @@ class GeometryRegions:
         previous_relative = float(row["previous_word_position_in_line"] / row["previous_words_in_line"])
         line_spacing = float(row["line_spacing"])
         if not np.isfinite(line_spacing) or line_spacing <= 0:
-            return {behaviour: np.empty((0, 4)) for behaviour in PRIMARY}
+            return {behaviour: np.empty((0, 4)) for behaviour in PARTITION_BEHAVIOURS}
 
-        category_rectangles: dict[str, list[list[float]]] = {behaviour: [] for behaviour in PRIMARY}
+        category_rectangles: dict[str, list[list[float]]] = {behaviour: [] for behaviour in PARTITION_BEHAVIOURS}
         for candidate in self.words[text].itertuples(index=False):
             if not np.isfinite([candidate.word_bbox_x1, candidate.word_bbox_x2, candidate.word_bbox_y1, candidate.word_bbox_y2, candidate.line_center_y]).all():
                 continue
@@ -152,6 +166,45 @@ class GeometryRegions:
             behaviour: np.asarray(rectangles, dtype=float).reshape(-1, 4)
             for behaviour, rectangles in category_rectangles.items()
         }
+
+    def partition_rectangles(self, row: pd.Series) -> dict[str, np.ndarray]:
+        """Page partition using line bands and inter-word-gap boundaries."""
+        out = {behavior: [] for behavior in PARTITION_BEHAVIOURS}
+        if not bool(row["previous_word_assignment_reliable"]):
+            return {key: np.empty((0, 4)) for key in out}
+        text, line, word = _normalise_text(row["text"]), int(row["previous_line"]), row["previous_ianum_word"]
+        if text not in self.line_bands or line not in self.line_bands[text]:
+            return {key: np.empty((0, 4)) for key in out}
+        xmin, xmax, ymin, ymax = self.page_bounds[text]
+        band_low, band_high = self.line_bands[text][line]
+        line_words = self.words[text].query("line == @line").sort_values("word_bbox_x1").reset_index(drop=True)
+        matches = np.flatnonzero(line_words["ianum_word"].to_numpy() == word)
+        if not len(matches):
+            return {key: np.empty((0, 4)) for key in out}
+        previous_rank = int(matches[0])
+        boundaries = [xmin] + [
+            (line_words.loc[index, "word_bbox_x2"] + line_words.loc[index + 1, "word_bbox_x1"]) / 2
+            for index in range(len(line_words) - 1)
+        ] + [xmax]
+        for rank in range(len(line_words)):
+            behavior = "refixation" if rank == previous_rank else "forward" if rank == previous_rank + 1 else "skip" if rank > previous_rank else "regression"
+            out[behavior].append([boundaries[rank], boundaries[rank + 1], band_low, band_high])
+        if ymin < band_low:
+            out["regression"].append([xmin, xmax, ymin, band_low])
+        next_line = line + 1
+        return_x = min(max(float(row["previous_x"]), xmin), xmax)
+        if next_line in self.line_bands[text]:
+            next_low, next_high = self.line_bands[text][next_line]
+            if xmin < return_x:
+                out["line_return"].append([xmin, return_x, next_low, next_high])
+            if return_x < xmax:
+                out["cross_line_other"].append([return_x, xmax, next_low, next_high])
+            below_start = next_high
+        else:
+            below_start = band_high
+        if below_start < ymax:
+            out["cross_line_other"].append([xmin, xmax, below_start, ymax])
+        return {key: np.asarray(value, dtype=float).reshape(-1, 4) for key, value in out.items()}
 
 
 def rectangle_mass(rectangles: np.ndarray, means: np.ndarray, covariances: np.ndarray) -> np.ndarray:
