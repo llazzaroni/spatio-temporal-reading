@@ -303,6 +303,10 @@ def main(args: argparse.Namespace) -> None:
     output = (args.output or checkpoint.parent / "regression_surprisal_analysis").resolve()
     output.mkdir(parents=True, exist_ok=True)
     model, uses_lm = checkpoint_model(checkpoint)
+    device = torch.device("cuda" if args.device == "auto" and torch.cuda.is_available() else "cpu" if args.device == "auto" else args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("--device cuda was requested but CUDA is not available.")
+    model.to(device)
     dataset = (MecoDatasetLM if uses_lm else MecoDataset)(mode="test", filtering="raw", datadir=args.data)
     labels = pd.read_csv(args.labels)
     regions = GeometryRegions(pd.read_csv(args.texts), args.vertical_threshold, args.return_position_threshold)
@@ -332,6 +336,7 @@ def main(args: argparse.Namespace) -> None:
         for item_index, item in enumerate(tqdm(dataset.items, desc="Held-out scanpaths", unit="scanpath", disable=not args.progress)):
             text, reader = item[:2]
             inputs, _, _ = dataset[item_index]
+            inputs = inputs.to(device)
             metadata = dataset.meco_df[(dataset.meco_df.text == text) & (dataset.meco_df.reader == reader)].copy()
             frame = session_labels(labels, metadata)
             valid = frame.behavioral_label.isin(PRIMARY) & frame.is_consecutive_original_fixation.astype(bool)
@@ -423,6 +428,7 @@ def main(args: argparse.Namespace) -> None:
     save_figure(events, {"beta": beta}, empirical_bootstrap, output / "regression_surprisal_summary.png")
     summary = {
         "checkpoint": str(Path(checkpoint).resolve()), "uses_lm_embeddings": uses_lm,
+        "device": str(device),
         "included_events": int(len(events)), "surprisal_sd_raw_units": float(surprisal_sd),
         "integration": "exact bivariate-normal rectangle CDF; regions are geometrically classifiable landing positions",
         "empirical": empirical_summary, "transformer": model_summary,
@@ -448,4 +454,5 @@ if __name__ == "__main__":
     parser.add_argument("--bootstrap-seed", type=int, default=20261029)
     parser.add_argument("--max-events", type=int, help="Debug option: stop after this many eligible events.")
     parser.add_argument("--progress", action=argparse.BooleanOptionalAction, default=True, help="Show tqdm progress bars (default: true).")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto", help="Inference device; auto selects CUDA when available.")
     main(parser.parse_args())
