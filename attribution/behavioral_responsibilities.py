@@ -48,6 +48,10 @@ def checkpoint_model(checkpoint_path: Path) -> tuple[torch.nn.Module, bool]:
     config = checkpoint["config"]
     if not isinstance(config, dict):
         config = vars(config).copy()
+    # Training metadata is retained in new ablation checkpoints but is not a
+    # Transformer constructor argument.
+    config.pop("ablate_linguistic_features", None)
+    config.pop("seed", None)
     config.setdefault("dropout", 0.0)
     state_dict = checkpoint["model_state_dict"]
     is_lm = any(key.startswith("gptProjector.") for key in state_dict)

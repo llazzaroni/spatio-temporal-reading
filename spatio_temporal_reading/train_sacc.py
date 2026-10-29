@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from spatio_temporal_reading.data.data import MecoDataset
-from spatio_temporal_reading.data.dataLM import MecoDatasetLM, MecoDatasetLM_conv
+from spatio_temporal_reading.data.dataLM import MecoDatasetLM, MecoDatasetLM_conv, MecoDatasetLMNoLinguistic
 from spatio_temporal_reading.model.model import SimpleModel, TransformerCov
 from spatio_temporal_reading.model.modelLM import SimpleModelLM, TransformerCovLM, TransformerCovLM_conv
 from spatio_temporal_reading.loss.loss_sacc import NegLogLikelihood
@@ -17,17 +17,25 @@ def get_device():
 
 def main(datapath, outputpath, args):
     device = get_device()
+    outputpath.mkdir(parents=True, exist_ok=True)
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
 
     if not args.augment:
         train_ds = MecoDataset(mode="train", filtering=args.filtering, datadir=datapath)
         val_ds = MecoDataset(mode="valid", filtering=args.filtering, datadir=datapath)
     else:
         if args.conv:
+            if args.ablate_linguistic_features:
+                raise ValueError("The linguistic ablation currently supports the non-convolutional LM model only.")
             train_ds = MecoDatasetLM_conv(mode="train", filtering=args.filtering, datadir=datapath)
             val_ds = MecoDatasetLM_conv(mode="valid", filtering=args.filtering, datadir=datapath)
         else:
-            train_ds = MecoDatasetLM(mode="train", filtering=args.filtering, datadir=datapath)
-            val_ds = MecoDatasetLM(mode="valid", filtering=args.filtering, datadir=datapath)
+            dataset_type = MecoDatasetLMNoLinguistic if args.ablate_linguistic_features else MecoDatasetLM
+            train_ds = dataset_type(mode="train", filtering=args.filtering, datadir=datapath)
+            val_ds = dataset_type(mode="valid", filtering=args.filtering, datadir=datapath)
 
     model_config = {
         "model_type": args.model_type,
@@ -37,7 +45,9 @@ def main(datapath, outputpath, args):
         "n_admixture_components": args.n_components,
         "max_len": train_ds.max_len,
         "H": args.heads,
-        "dropout": float(args.dropout)
+        "dropout": float(args.dropout),
+        "ablate_linguistic_features": bool(args.ablate_linguistic_features),
+        "seed": args.seed,
     }
 
     dataloader_kwargs = dict(

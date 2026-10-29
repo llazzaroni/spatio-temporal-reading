@@ -141,6 +141,22 @@ class MecoDatasetLM(MecoDataset):
             positions_target,
             saccades_target
         )
+
+
+class MecoDatasetLMNoLinguistic(MecoDatasetLM):
+    """LM dataset with scalar linguistic values and masks neutralised.
+
+    Input width is retained, so the ablation matches the full COV+LM model's
+    architecture and parameter count. The three scalar values and their masks
+    are constants during training and evaluation.
+    """
+
+    def __getitem__(self, index):
+        input_model, positions_target, saccades_target = super().__getitem__(index)
+        feature_start = 4 + len(self.reader_to_idx)
+        linguistic_offsets = [0, 1, 3, 4, 5, 7]
+        input_model[:, [feature_start + offset for offset in linguistic_offsets]] = 0.0
+        return input_model, positions_target, saccades_target
     
 class MecoDatasetLM_conv(MecoDatasetLM):
     CONTEXT_WINDOW = 3

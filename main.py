@@ -89,6 +89,8 @@ if __name__ == "__main__":
     p.add_argument("--batch-size", type=int, default=1)
     p.add_argument("--num-workers", type=int, default=4)
     p.add_argument("--amp", default=False, action="store_true")
+    p.add_argument("--ablate-linguistic-features", default=False, action="store_true")
+    p.add_argument("--seed", type=int)
     p.add_argument("--data")
     p.add_argument("--output")
     p.add_argument("--checkpoint-path")
