@@ -51,6 +51,12 @@ DATA_DIR = ROOT / "data"
 DEFAULT_LABELS = DATA_DIR / "hp_augmented_meco_100_1000_1_10_model_filtered_behavioral_labels.csv"
 TEXTS = DATA_DIR / "hp_eng_texts_100_1000_1_10.csv"
 PRIMARY = ("forward", "skip", "refixation", "regression", "line_return")
+LINGUISTIC_PREDICTORS = {
+    "word_surprisal": {"raw": "word_level_surprisal", "missing": "word_level_surprisal_nan", "input_offset": 1, "label": "Word surprisal"},
+    "char_surprisal": {"raw": "char_level_surp", "missing": "char_level_surp_nan", "input_offset": 0, "label": "Character surprisal"},
+    # The Transformer receives -log(raw frequency), not raw frequency.
+    "lexical_rarity": {"raw": "freq", "missing": "freq_nan", "input_offset": 3, "label": "Lexical rarity (-log frequency)"},
+}
 
 
 def _normalise_text(value: object) -> int:
@@ -202,43 +208,48 @@ def session_labels(labels: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame
     return result
 
 
-def prepare_empirical_controls(events: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
+def prepare_empirical_controls(events: pd.DataFrame, raw: pd.DataFrame, training_stats: dict[str, dict[str, float]]) -> pd.DataFrame:
     raw = raw.sort_values(["text", "reader", "fixid"], kind="stable").copy()
     group = raw.groupby(["text", "reader"], sort=False)
     raw["previous_duration"] = group["dur"].shift()
     raw["previous_dx"] = group["dx"].shift()
     raw["previous_dy"] = group["dy"].shift()
     raw["previous_word_length"] = group["len"].shift()
-    raw["previous_frequency"] = group["freq"].shift()
-    raw["previous_word_surprisal"] = group["word_level_surprisal"].shift()
-    raw["previous_word_surprisal_missing"] = group["word_level_surprisal_nan"].shift()
+    for name, spec in LINGUISTIC_PREDICTORS.items():
+        raw[f"previous_{name}"] = group[spec["raw"]].shift()
+        raw[f"previous_{name}_missing"] = group[spec["missing"]].shift()
     controls = raw[[
         "text", "reader", "fixid", "previous_duration", "previous_dx", "previous_dy",
-        "previous_word_length", "previous_frequency", "previous_word_surprisal",
-        "previous_word_surprisal_missing",
+        "previous_word_length",
+        *[f"previous_{name}" for name in LINGUISTIC_PREDICTORS],
+        *[f"previous_{name}_missing" for name in LINGUISTIC_PREDICTORS],
     ]]
     events = events.merge(controls, on=["text", "reader", "fixid"], how="left", validate="one_to_one")
     events["line_position"] = events["previous_word_position_in_line"] / events["previous_words_in_line"]
     events["regression_observed"] = events["behavioral_label"].eq("regression").astype(int)
     events["scanpath"] = events["text"].astype(str) + "::" + events["reader"].astype(str)
     events["previous_log_duration"] = np.log(events["previous_duration"].clip(lower=1e-6))
-    events["previous_frequency"] = -np.log(events["previous_frequency"].clip(lower=1e-12))
+    events["previous_lexical_rarity"] = -np.log(events["previous_lexical_rarity"].clip(lower=1e-12))
     model_columns = [
-        "previous_word_surprisal", "line_position", "previous_log_duration", "previous_dx",
-        "previous_dy", "previous_word_length", "previous_frequency",
+        *[f"previous_{name}" for name in LINGUISTIC_PREDICTORS],
+        "line_position", "previous_log_duration", "previous_dx", "previous_dy", "previous_word_length",
     ]
-    events = events.loc[events["previous_word_surprisal_missing"].eq(0)].copy()
+    events = events.loc[(events[[f"previous_{name}_missing" for name in LINGUISTIC_PREDICTORS]] == 0).all(axis=1)].copy()
     events = events.dropna(subset=model_columns)
     for column in model_columns:
-        mean, sd = events[column].mean(), events[column].std(ddof=0)
+        name = column.removeprefix("previous_")
+        if name in training_stats:
+            mean, sd = training_stats[name]["mean"], training_stats[name]["sd"]
+        else:
+            mean, sd = events[column].mean(), events[column].std(ddof=0)
         events[f"{column}_z"] = (events[column] - mean) / sd
     return events
 
 
 def empirical_logistic(events: pd.DataFrame, weights: np.ndarray | None = None):
     predictors = [
-        "previous_word_surprisal_z", "line_position_z", "previous_log_duration_z", "previous_dx_z",
-        "previous_dy_z", "previous_word_length_z", "previous_frequency_z",
+        *[f"previous_{name}_z" for name in LINGUISTIC_PREDICTORS],
+        "line_position_z", "previous_log_duration_z", "previous_dx_z", "previous_dy_z", "previous_word_length_z",
     ]
     import patsy
     formula = "regression_observed ~ " + " + ".join(predictors) + " + C(reader) + C(text)"
@@ -248,51 +259,51 @@ def empirical_logistic(events: pd.DataFrame, weights: np.ndarray | None = None):
         cov_type="cluster" if weights is None else "nonrobust",
         cov_kwds={"groups": events["scanpath"]} if weights is None else None,
     )
-    beta = float(fit.params["previous_word_surprisal_z"])
     probabilities = np.asarray(fit.predict(x))
-    ame = beta * float(np.mean(probabilities * (1 - probabilities)))
+    beta = {name: float(fit.params[f"previous_{name}_z"]) for name in LINGUISTIC_PREDICTORS}
+    ame = {name: value * float(np.mean(probabilities * (1 - probabilities))) for name, value in beta.items()}
     return fit, beta, ame
 
 
 def bootstrap_empirical(events: pd.DataFrame, replicates: int, seed: int, progress: bool) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     codes, names = pd.factorize(events["scanpath"], sort=True)
-    beta, ame = [], []
+    draws: list[dict[str, float]] = []
     for _ in tqdm(range(replicates), desc="Empirical scanpath bootstrap", disable=not progress):
         counts = np.bincount(rng.integers(len(names), size=len(names)), minlength=len(names))
         weights = counts[codes]
         try:
             _, draw_beta, draw_ame = empirical_logistic(events, weights)
-            beta.append(draw_beta)
-            ame.append(draw_ame)
+            draws.append({**{f"beta_{name}": value for name, value in draw_beta.items()}, **{f"ame_{name}": value for name, value in draw_ame.items()}})
         except (np.linalg.LinAlgError, ValueError):
             continue
-    return pd.DataFrame({"beta": beta, "odds_ratio": np.exp(beta), "average_marginal_effect": ame})
+    return pd.DataFrame(draws)
 
 
-def save_figure(events: pd.DataFrame, empirical: dict[str, float], bootstrap: pd.DataFrame, path: Path) -> None:
-    figure, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-    axes = axes.ravel()
-    valid = events.dropna(subset=["model_regression_probability"])
-    axes[0].hist(valid["model_regression_probability"], bins=35, color="#4C78A8")
-    axes[0].set(title="Predicted conditional regression probability", xlabel="Probability", ylabel="Events")
-    bins = pd.qcut(valid["model_regression_probability"], q=min(10, valid["model_regression_probability"].nunique()), duplicates="drop")
-    calibration = valid.groupby(bins, observed=True).agg(predicted=("model_regression_probability", "mean"), observed=("regression_observed", "mean"))
-    axes[1].plot(calibration["predicted"], calibration["observed"], "o-", color="#F58518")
-    axes[1].plot([0, 1], [0, 1], "--", color="black")
-    axes[1].set(title="Calibration on classifiable transitions", xlabel="Mean predicted probability", ylabel="Observed regression frequency", xlim=(0, 1), ylim=(0, 1))
-    axes[2].hist(bootstrap["beta"], bins=30, color="#54A24B")
-    axes[2].axvline(empirical["beta"], color="black", linestyle="--", label="Point estimate")
-    axes[2].axvline(0, color="grey", linewidth=1)
-    axes[2].set(title="Empirical surprisal coefficient", xlabel="Log-odds per +1 SD", ylabel="Bootstrap draws")
-    axes[2].legend()
-    effects = valid["model_surprisal_effect_per_sd"].dropna()
-    axes[3].hist(effects, bins=35, color="#B279A2")
-    axes[3].axvline(0, color="black", linewidth=1)
-    axes[3].axvline(effects.mean(), color="black", linestyle="--", label="Mean")
-    axes[3].set(title="Transformer local surprisal sensitivity", xlabel="Conditional regression-probability change per +1 SD", ylabel="Events")
-    axes[3].legend()
-    figure.savefig(path, dpi=220)
+def save_figures(events: pd.DataFrame, beta: dict[str, float], empirical_bootstrap: pd.DataFrame, model_bootstrap: pd.DataFrame, output: Path) -> None:
+    """Save the requested empirical-coefficient and model-sensitivity figures."""
+    figure, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
+    for axis, (name, spec) in zip(axes, LINGUISTIC_PREDICTORS.items()):
+        values = empirical_bootstrap[f"beta_{name}"].dropna()
+        axis.hist(values, bins=30, color="#54A24B")
+        axis.axvline(beta[name], color="black", linestyle="--", label="Point estimate")
+        axis.axvline(0, color="grey", linewidth=1)
+        axis.set(title=spec["label"], xlabel="Log-odds per +1 training SD", ylabel="Bootstrap draws")
+        axis.legend(fontsize=8)
+    figure.suptitle("Empirical conditional associations with observed regressions")
+    figure.savefig(output / "empirical_linguistic_coefficients.png", dpi=220)
+    plt.close(figure)
+
+    figure, axes = plt.subplots(1, 3, figsize=(15, 4), constrained_layout=True)
+    for axis, (name, spec) in zip(axes, LINGUISTIC_PREDICTORS.items()):
+        effects = events[f"model_effect_{name}_per_sd"].dropna()
+        axis.hist(effects, bins=35, color="#B279A2")
+        axis.axvline(0, color="black", linewidth=1)
+        axis.axvline(effects.mean(), color="black", linestyle="--", label="Mean")
+        axis.set(title=spec["label"], xlabel="Regression-probability change per +1 training SD", ylabel="Events")
+        axis.legend(fontsize=8)
+    figure.suptitle("Transformer partial sensitivity to linguistic predictors")
+    figure.savefig(output / "transformer_linguistic_sensitivities.png", dpi=220)
     plt.close(figure)
 
 
@@ -311,8 +322,17 @@ def main(args: argparse.Namespace) -> None:
     labels = pd.read_csv(args.labels)
     regions = GeometryRegions(pd.read_csv(args.texts), args.vertical_threshold, args.return_position_threshold)
     # Raw dataframe is also used for empirical previous-fixation covariates.
-    raw = pd.read_csv(args.data / "hp_augmented_meco_100_1000_1_10_model_tokens.csv")
-    surprisal_sd = raw.loc[raw["word_level_surprisal_nan"].eq(0), "word_level_surprisal"].std(ddof=0)
+    raw_name = "hp_augmented_meco_100_1000_1_10_model_tokens.csv" if uses_lm else "hp_augmented_meco_100_1000_1_10_model.csv"
+    raw = pd.read_csv(args.data / raw_name)
+    train_dataset = (MecoDatasetLM if uses_lm else MecoDataset)(mode="train", filtering="raw", datadir=args.data)
+    train_sessions = pd.DataFrame([item[:2] for item in train_dataset.items], columns=["text", "reader"])
+    training_raw = raw.merge(train_sessions, on=["text", "reader"], how="inner")
+    training_stats: dict[str, dict[str, float]] = {}
+    for name, spec in LINGUISTIC_PREDICTORS.items():
+        values = training_raw.loc[training_raw[spec["missing"]].eq(0), spec["raw"]].astype(float)
+        if name == "lexical_rarity":
+            values = -np.log(values.clip(lower=1e-12))
+        training_stats[name] = {"mean": float(values.mean()), "sd": float(values.std(ddof=0))}
     event_frames: list[pd.DataFrame] = []
     processed_targets = 0
     # Dataset items carry an additional split/metadata field in some dataset
@@ -358,10 +378,15 @@ def main(args: argparse.Namespace) -> None:
                 # we discard tokens after t.  Prefix batching avoids carrying
                 # a long raw scanpath through attention for every perturbation.
                 prefix = inputs[:int(indices.max()) + 1]
-                batch = prefix.unsqueeze(0).repeat(2 * len(indices), 1, 1)
-                surprise_column = 5 + len(dataset.reader_to_idx)
-                batch[np.arange(len(indices)), indices, surprise_column] += surprisal_sd
-                batch[len(indices) + np.arange(len(indices)), indices, surprise_column] -= surprisal_sd
+                event_count = len(indices)
+                batch = prefix.unsqueeze(0).repeat(2 * len(LINGUISTIC_PREDICTORS) * event_count, 1, 1)
+                feature_start = 4 + len(dataset.reader_to_idx)
+                for predictor_index, (name, spec) in enumerate(LINGUISTIC_PREDICTORS.items()):
+                    plus_rows = predictor_index * 2 * event_count + np.arange(event_count)
+                    minus_rows = predictor_index * 2 * event_count + event_count + np.arange(event_count)
+                    column = feature_start + spec["input_offset"]
+                    batch[plus_rows, indices, column] += training_stats[name]["sd"]
+                    batch[minus_rows, indices, column] -= training_stats[name]["sd"]
                 plus_minus = model(batch)
                 for local, target in enumerate(indices):
                     row = frame.iloc[target].copy()
@@ -377,14 +402,17 @@ def main(args: argparse.Namespace) -> None:
                             regression_rectangles, primary_rectangles, row.previous_x, row.previous_y,
                         )
                     base_p, base_num, base_den, base_reg_mass, base_primary_mass = probability(baseline, 0, target)
-                    plus_p, _, _, _, _ = probability(plus_minus, local, target)
-                    minus_p, _, _, _, _ = probability(plus_minus, len(indices) + local, target)
                     row["model_regression_probability"] = base_p
                     row["model_regression_numerator"] = base_num
                     row["model_primary_denominator"] = base_den
-                    row["model_probability_plus_1sd"] = plus_p
-                    row["model_probability_minus_1sd"] = minus_p
-                    row["model_surprisal_effect_per_sd"] = (plus_p - minus_p) / 2
+                    for predictor_index, name in enumerate(LINGUISTIC_PREDICTORS):
+                        plus_row = predictor_index * 2 * event_count + local
+                        minus_row = predictor_index * 2 * event_count + event_count + local
+                        plus_p, _, _, _, _ = probability(plus_minus, plus_row, target)
+                        minus_p, _, _, _, _ = probability(plus_minus, minus_row, target)
+                        row[f"model_probability_{name}_plus_1sd"] = plus_p
+                        row[f"model_probability_{name}_minus_1sd"] = minus_p
+                        row[f"model_effect_{name}_per_sd"] = (plus_p - minus_p) / 2
                     base_weights = baseline[0][0, target].cpu().numpy()
                     for component in range(len(base_weights)):
                         row[f"prior_weight_{component}"] = base_weights[component]
@@ -396,40 +424,49 @@ def main(args: argparse.Namespace) -> None:
     event_progress.close()
 
     events = pd.concat(event_frames, ignore_index=True)
-    events = prepare_empirical_controls(events, raw)
+    events = prepare_empirical_controls(events, raw, training_stats)
     fit, beta, ame = empirical_logistic(events)
     empirical_bootstrap = bootstrap_empirical(events, args.bootstrap_replicates, args.bootstrap_seed, args.progress)
-    model_effect = events["model_surprisal_effect_per_sd"].dropna()
     codes, names = pd.factorize(events["scanpath"], sort=True)
     rng = np.random.default_rng(args.bootstrap_seed)
-    model_bootstrap = []
+    model_bootstrap: list[dict[str, float]] = []
     for _ in tqdm(range(args.bootstrap_replicates), desc="Transformer-effect bootstrap", disable=not args.progress):
         counts = np.bincount(rng.integers(len(names), size=len(names)), minlength=len(names))
-        model_bootstrap.append(np.average(events["model_surprisal_effect_per_sd"], weights=counts[codes]))
-    empirical_summary = {
-        "beta_log_odds_per_1sd": beta,
-        "odds_ratio_per_1sd": float(np.exp(beta)),
-        "average_marginal_effect_per_1sd": ame,
-        "cluster_robust_ci_beta": [float(fit.conf_int().loc["previous_word_surprisal_z", 0]), float(fit.conf_int().loc["previous_word_surprisal_z", 1])],
-        "scanpath_bootstrap_ci_beta": np.quantile(empirical_bootstrap["beta"], [.025, .975]).tolist(),
-        "scanpath_bootstrap_ci_ame": np.quantile(empirical_bootstrap["average_marginal_effect"], [.025, .975]).tolist(),
-    }
-    model_summary = {
-        "mean_effect_per_1sd": float(model_effect.mean()),
-        "median_effect_per_1sd": float(model_effect.median()),
-        "scanpath_bootstrap_ci_mean_effect": np.quantile(model_bootstrap, [.025, .975]).tolist(),
+        model_bootstrap.append({name: float(np.average(events[f"model_effect_{name}_per_sd"], weights=counts[codes])) for name in LINGUISTIC_PREDICTORS})
+    model_bootstrap_df = pd.DataFrame(model_bootstrap)
+    empirical_summary = {name: {
+        "beta_log_odds_per_1sd": beta[name], "odds_ratio_per_1sd": float(np.exp(beta[name])),
+        "average_marginal_effect_per_1sd": ame[name],
+        "cluster_robust_ci_beta": fit.conf_int().loc[f"previous_{name}_z"].astype(float).tolist(),
+        "scanpath_bootstrap_ci_beta": np.quantile(empirical_bootstrap[f"beta_{name}"], [.025, .975]).tolist(),
+    } for name in LINGUISTIC_PREDICTORS}
+    model_summary = {name: {
+        "mean_effect_per_1sd": float(events[f"model_effect_{name}_per_sd"].mean()),
+        "median_effect_per_1sd": float(events[f"model_effect_{name}_per_sd"].median()),
+        "scanpath_bootstrap_ci_mean_effect": np.quantile(model_bootstrap_df[name], [.025, .975]).tolist(),
+    } for name in LINGUISTIC_PREDICTORS} | {
         "mean_conditional_regression_probability": float(events["model_regression_probability"].mean()),
         "observed_regression_frequency": float(events["regression_observed"].mean()),
     }
     events.to_csv(output / "test_regression_surprisal_events.csv", index=False)
     fit.summary2().tables[1].to_csv(output / "empirical_logistic_coefficients.csv")
     empirical_bootstrap.to_csv(output / "empirical_logistic_scanpath_bootstrap.csv", index=False)
-    pd.DataFrame({"mean_model_effect_per_1sd": model_bootstrap}).to_csv(output / "model_effect_scanpath_bootstrap.csv", index=False)
-    save_figure(events, {"beta": beta}, empirical_bootstrap, output / "regression_surprisal_summary.png")
+    model_bootstrap_df.to_csv(output / "model_effect_scanpath_bootstrap.csv", index=False)
+    summary_table = pd.DataFrame([{
+        "predictor": name,
+        "empirical_coefficient": beta[name],
+        "empirical_ci_lower": empirical_summary[name]["scanpath_bootstrap_ci_beta"][0],
+        "empirical_ci_upper": empirical_summary[name]["scanpath_bootstrap_ci_beta"][1],
+        "mean_transformer_sensitivity": model_summary[name]["mean_effect_per_1sd"],
+        "transformer_ci_lower": model_summary[name]["scanpath_bootstrap_ci_mean_effect"][0],
+        "transformer_ci_upper": model_summary[name]["scanpath_bootstrap_ci_mean_effect"][1],
+    } for name in LINGUISTIC_PREDICTORS])
+    summary_table.to_csv(output / "linguistic_predictor_summary.csv", index=False)
+    save_figures(events, beta, empirical_bootstrap, model_bootstrap_df, output)
     summary = {
         "checkpoint": str(Path(checkpoint).resolve()), "uses_lm_embeddings": uses_lm,
         "device": str(device),
-        "included_events": int(len(events)), "surprisal_sd_raw_units": float(surprisal_sd),
+        "included_events": int(len(events)), "training_feature_statistics": training_stats,
         "integration": "exact bivariate-normal rectangle CDF; regions are geometrically classifiable landing positions",
         "empirical": empirical_summary, "transformer": model_summary,
         "bootstrap_replicates": args.bootstrap_replicates,
@@ -449,7 +486,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path)
     parser.add_argument("--vertical-threshold", type=float, default=.5)
     parser.add_argument("--return-position-threshold", type=float, default=.5)
-    parser.add_argument("--perturbation-batch-size", type=int, default=16)
+    parser.add_argument(
+        "--perturbation-batch-size", type=int, default=8,
+        help="Number of events per GPU batch; each event expands to six +/- predictor variants (default: 8).",
+    )
     parser.add_argument("--bootstrap-replicates", type=int, default=500)
     parser.add_argument("--bootstrap-seed", type=int, default=20261029)
     parser.add_argument("--max-events", type=int, help="Debug option: stop after this many eligible events.")
