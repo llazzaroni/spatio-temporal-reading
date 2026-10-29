@@ -87,15 +87,15 @@ class GeometryRegions:
         words["line_center_y"] = words.set_index(["text_id", "line"]).index.map(self.centres)
         self.words = {int(text): group.reset_index(drop=True) for text, group in words.groupby("text_id")}
 
-    def rectangles(self, row: pd.Series) -> tuple[np.ndarray, np.ndarray]:
-        """Return non-overlapping absolute-coordinate rectangles for R and E.
+    def rectangles(self, row: pd.Series) -> dict[str, np.ndarray]:
+        """Return non-overlapping absolute-coordinate rectangles by behaviour.
 
         The reliability conditions used here are exactly those decidable from
         the previous fixation, a proposed landing coordinate, and the fixed
         text geometry.  The three-fixation audit flag is intentionally absent.
         """
         if not bool(row["previous_word_assignment_reliable"]):
-            return np.empty((0, 4)), np.empty((0, 4))
+            return {behaviour: np.empty((0, 4)) for behaviour in PRIMARY}
         text = _normalise_text(row["text"])
         previous_line = row["previous_line"]
         previous_word = row["previous_ianum_word"]
@@ -105,10 +105,9 @@ class GeometryRegions:
         previous_relative = float(row["previous_word_position_in_line"] / row["previous_words_in_line"])
         line_spacing = float(row["line_spacing"])
         if not np.isfinite(line_spacing) or line_spacing <= 0:
-            return np.empty((0, 4)), np.empty((0, 4))
+            return {behaviour: np.empty((0, 4)) for behaviour in PRIMARY}
 
-        regression: list[list[float]] = []
-        primary: list[list[float]] = []
+        category_rectangles: dict[str, list[list[float]]] = {behaviour: [] for behaviour in PRIMARY}
         for candidate in self.words[text].itertuples(index=False):
             if not np.isfinite([candidate.word_bbox_x1, candidate.word_bbox_x2, candidate.word_bbox_y1, candidate.word_bbox_y2, candidate.line_center_y]).all():
                 continue
@@ -148,10 +147,11 @@ class GeometryRegions:
             if label is None or x1 >= x2:
                 continue
             rectangle = [float(x1), float(x2), float(y1), float(y2)]
-            primary.append(rectangle)
-            if label == "regression":
-                regression.append(rectangle)
-        return np.asarray(regression, dtype=float).reshape(-1, 4), np.asarray(primary, dtype=float).reshape(-1, 4)
+            category_rectangles[label].append(rectangle)
+        return {
+            behaviour: np.asarray(rectangles, dtype=float).reshape(-1, 4)
+            for behaviour, rectangles in category_rectangles.items()
+        }
 
 
 def rectangle_mass(rectangles: np.ndarray, means: np.ndarray, covariances: np.ndarray) -> np.ndarray:
@@ -183,14 +183,14 @@ def rectangle_mass(rectangles: np.ndarray, means: np.ndarray, covariances: np.nd
     return np.clip(masses, 0.0, 1.0)
 
 
-def conditional_regression_probability(
+def conditional_behavior_probability(
     weights: np.ndarray, means: np.ndarray, covariances: np.ndarray,
-    regression_rectangles: np.ndarray, primary_rectangles: np.ndarray,
+    behaviour_rectangles: np.ndarray, primary_rectangles: np.ndarray,
     previous_x: float, previous_y: float,
 ) -> tuple[float, float, float, np.ndarray, np.ndarray]:
-    """Return conditional regression probability and numerator/denominator."""
+    """Return conditional behavioural probability and numerator/denominator."""
     translate = np.array([previous_x, previous_x, previous_y, previous_y])
-    reg_mass = rectangle_mass(regression_rectangles - translate, means, covariances)
+    reg_mass = rectangle_mass(behaviour_rectangles - translate, means, covariances)
     primary_mass = rectangle_mass(primary_rectangles - translate, means, covariances)
     numerator = float(weights @ reg_mass)
     denominator = float(weights @ primary_mass)
@@ -203,10 +203,10 @@ def integrate_probability_variants(payload):
     Keeping this at module scope makes it pickleable for spawn-safe worker
     processes.  It deliberately contains no Torch/CUDA objects.
     """
-    regression_rectangles, primary_rectangles, previous_x, previous_y, parameter_sets = payload
+    behaviour_rectangles, primary_rectangles, previous_x, previous_y, parameter_sets = payload
     return [
-        conditional_regression_probability(
-            weights, means, covariances, regression_rectangles, primary_rectangles, previous_x, previous_y
+        conditional_behavior_probability(
+            weights, means, covariances, behaviour_rectangles, primary_rectangles, previous_x, previous_y
         )
         for weights, means, covariances in parameter_sets
     ]
@@ -218,6 +218,7 @@ def session_labels(labels: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame
         "previous_word_assignment_reliable", "previous_line", "previous_ianum_word",
         "previous_x", "previous_y", "previous_line_center_y", "previous_word_position_in_line",
         "previous_words_in_line", "line_spacing", "word_position_in_line", "words_in_line",
+        "previous_word_bbox_x1", "previous_word_bbox_x2",
     ]
     result = metadata[["text", "reader", "fixid"]].merge(
         labels[keep], how="left", on=["text", "reader", "fixid"], validate="one_to_one"
@@ -225,7 +226,7 @@ def session_labels(labels: pd.DataFrame, metadata: pd.DataFrame) -> pd.DataFrame
     return result
 
 
-def prepare_empirical_controls(events: pd.DataFrame, raw: pd.DataFrame, training_stats: dict[str, dict[str, float]]) -> pd.DataFrame:
+def prepare_empirical_controls(events: pd.DataFrame, raw: pd.DataFrame, training_stats: dict[str, dict[str, float]], behavior: str) -> pd.DataFrame:
     raw = raw.sort_values(["text", "reader", "fixid"], kind="stable").copy()
     group = raw.groupby(["text", "reader"], sort=False)
     raw["previous_duration"] = group["dur"].shift()
@@ -243,14 +244,22 @@ def prepare_empirical_controls(events: pd.DataFrame, raw: pd.DataFrame, training
     ]]
     events = events.merge(controls, on=["text", "reader", "fixid"], how="left", validate="one_to_one")
     events["line_position"] = events["previous_word_position_in_line"] / events["previous_words_in_line"]
-    events["regression_observed"] = events["behavioral_label"].eq("regression").astype(int)
+    events["behavior_observed"] = events["behavioral_label"].eq(behavior).astype(int)
     events["scanpath"] = events["text"].astype(str) + "::" + events["reader"].astype(str)
     events["previous_log_duration"] = np.log(events["previous_duration"].clip(lower=1e-6))
     events["previous_lexical_rarity"] = -np.log(events["previous_lexical_rarity"].clip(lower=1e-12))
+    if behavior == "refixation":
+        word_width = events["previous_word_bbox_x2"] - events["previous_word_bbox_x1"]
+        events["previous_landing_position_in_word"] = (
+            (events["previous_x"] - events["previous_word_bbox_x1"]) / word_width
+        )
+        events["previous_landing_position_in_word_sq"] = events["previous_landing_position_in_word"] ** 2
     model_columns = [
         *[f"previous_{name}" for name in LINGUISTIC_PREDICTORS],
         "line_position", "previous_log_duration", "previous_dx", "previous_dy", "previous_word_length",
     ]
+    if behavior == "refixation":
+        model_columns.extend(["previous_landing_position_in_word", "previous_landing_position_in_word_sq"])
     events = events.loc[(events[[f"previous_{name}_missing" for name in LINGUISTIC_PREDICTORS]] == 0).all(axis=1)].copy()
     events = events.dropna(subset=model_columns)
     for column in model_columns:
@@ -268,8 +277,10 @@ def empirical_logistic(events: pd.DataFrame, weights: np.ndarray | None = None):
         *[f"previous_{name}_z" for name in LINGUISTIC_PREDICTORS],
         "line_position_z", "previous_log_duration_z", "previous_dx_z", "previous_dy_z", "previous_word_length_z",
     ]
+    if "previous_landing_position_in_word_z" in events:
+        predictors.extend(["previous_landing_position_in_word_z", "previous_landing_position_in_word_sq_z"])
     import patsy
-    formula = "regression_observed ~ " + " + ".join(predictors) + " + C(reader) + C(text)"
+    formula = "behavior_observed ~ " + " + ".join(predictors) + " + C(reader) + C(text)"
     y, x = patsy.dmatrices(formula, events, return_type="dataframe")
     kwargs = {} if weights is None else {"freq_weights": weights}
     fit = sm.GLM(y, x, family=sm.families.Binomial(), **kwargs).fit(
@@ -307,7 +318,7 @@ def save_figures(events: pd.DataFrame, beta: dict[str, float], empirical_bootstr
         axis.axvline(0, color="grey", linewidth=1)
         axis.set(title=spec["label"], xlabel="Log-odds per +1 training SD", ylabel="Bootstrap draws")
         axis.legend(fontsize=8)
-    figure.suptitle("Empirical conditional associations with observed regressions")
+    figure.suptitle("Empirical conditional associations with the observed behaviour")
     figure.savefig(output / "empirical_linguistic_coefficients.png", dpi=220)
     plt.close(figure)
 
@@ -427,19 +438,21 @@ def main(args: argparse.Namespace) -> None:
                 rows_and_payloads = []
                 for local, target in enumerate(indices):
                     row = frame.iloc[target].copy()
-                    regression_rectangles, primary_rectangles = regions.rectangles(row)
+                    category_rectangles = regions.rectangles(row)
+                    behaviour_rectangles = category_rectangles[args.behavior]
+                    primary_rectangles = np.concatenate(list(category_rectangles.values()))
                     if not len(primary_rectangles):
                         continue
                     parameter_sets = [tuple(values[local] for values in base_selected)]
                     for name in LINGUISTIC_PREDICTORS:
                         parameter_sets.extend(tuple(values[local] for values in selected) for selected in variant_selected[name])
-                    rows_and_payloads.append((row, (regression_rectangles, primary_rectangles, float(row.previous_x), float(row.previous_y), parameter_sets)))
+                    rows_and_payloads.append((row, (behaviour_rectangles, primary_rectangles, float(row.previous_x), float(row.previous_y), parameter_sets)))
                 payloads = [payload for _, payload in rows_and_payloads]
                 results = list(executor.map(integrate_probability_variants, payloads)) if executor else [integrate_probability_variants(payload) for payload in payloads]
                 for (row, payload), probabilities in zip(rows_and_payloads, results):
                     base_p, base_num, base_den, base_reg_mass, base_primary_mass = probabilities[0]
-                    row["model_regression_probability"] = base_p
-                    row["model_regression_numerator"] = base_num
+                    row["model_behavior_probability"] = base_p
+                    row["model_behavior_numerator"] = base_num
                     row["model_primary_denominator"] = base_den
                     for predictor_index, name in enumerate(LINGUISTIC_PREDICTORS):
                         plus_p = probabilities[1 + 2 * predictor_index][0]
@@ -452,7 +465,7 @@ def main(args: argparse.Namespace) -> None:
                     base_weights = payload[4][0][0]
                     for component in range(len(base_weights)):
                         row[f"prior_weight_{component}"] = base_weights[component]
-                        row[f"regression_region_mass_{component}"] = base_reg_mass[component]
+                        row[f"behavior_region_mass_{component}"] = base_reg_mass[component]
                         row[f"primary_region_mass_{component}"] = base_primary_mass[component]
                     event_frames.append(pd.DataFrame([row]))
                     processed_targets += 1
@@ -463,7 +476,7 @@ def main(args: argparse.Namespace) -> None:
       event_progress.close()
 
     events = pd.concat(event_frames, ignore_index=True)
-    events = prepare_empirical_controls(events, raw, training_stats)
+    events = prepare_empirical_controls(events, raw, training_stats, args.behavior)
     fit, beta, ame = empirical_logistic(events)
     empirical_bootstrap = bootstrap_empirical(events, args.bootstrap_replicates, args.bootstrap_seed, args.progress)
     codes, names = pd.factorize(events["scanpath"], sort=True)
@@ -484,10 +497,10 @@ def main(args: argparse.Namespace) -> None:
         "median_effect_per_1sd": float(events[f"model_effect_{name}_per_sd"].median()),
         "scanpath_bootstrap_ci_mean_effect": np.quantile(model_bootstrap_df[name], [.025, .975]).tolist(),
     } for name in LINGUISTIC_PREDICTORS} | {
-        "mean_conditional_regression_probability": float(events["model_regression_probability"].mean()),
-        "observed_regression_frequency": float(events["regression_observed"].mean()),
+        "mean_conditional_behavior_probability": float(events["model_behavior_probability"].mean()),
+        "observed_behavior_frequency": float(events["behavior_observed"].mean()),
     }
-    events.to_csv(output / "test_regression_surprisal_events.csv", index=False)
+    events.to_csv(output / "test_behavior_linguistic_predictor_events.csv", index=False)
     fit.summary2().tables[1].to_csv(output / "empirical_logistic_coefficients.csv")
     empirical_bootstrap.to_csv(output / "empirical_logistic_scanpath_bootstrap.csv", index=False)
     model_bootstrap_df.to_csv(output / "model_effect_scanpath_bootstrap.csv", index=False)
@@ -505,6 +518,7 @@ def main(args: argparse.Namespace) -> None:
     summary = {
         "checkpoint": str(Path(checkpoint).resolve()), "uses_lm_embeddings": uses_lm,
         "device": str(device),
+        "behavior": args.behavior,
         "included_events": int(len(events)), "training_feature_statistics": training_stats,
         "integration": "exact bivariate-normal rectangle CDF; regions are geometrically classifiable landing positions",
         "empirical": empirical_summary, "transformer": model_summary,
@@ -521,6 +535,7 @@ if __name__ == "__main__":
     parser.add_argument("--labels", type=Path, default=DEFAULT_LABELS)
     parser.add_argument("--texts", type=Path, default=TEXTS)
     parser.add_argument("--filtering", choices=["raw"], default="raw")
+    parser.add_argument("--behavior", choices=PRIMARY, default="regression", help="Observed and model-integrated behavioural outcome.")
     parser.add_argument("--checkpoint-path", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--vertical-threshold", type=float, default=.5)
