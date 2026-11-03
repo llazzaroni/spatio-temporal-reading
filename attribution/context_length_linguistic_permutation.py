@@ -1,16 +1,9 @@
-"""Grouped linguistic permutation test across available context lengths.
+"""Original grouped linguistic permutation test over scanpath prefixes.
 
-At every context length, each target is predicted from exactly L preceding
-fixations.  The original inputs are compared with inputs in which the three
-scalar linguistic values are jointly shuffled between compatible words.  A
-positive result is a likelihood benefit (nats per predicted fixation) from
-the intact linguistic information.
-
-Unlike the behavioural analyses, this is an overall scanpath-likelihood test:
-it deliberately uses all model-evaluable raw held-out targets, not only
-word-aligned labelled transitions.
+For a prefix length L, likelihood is accumulated over the first L predicted
+fixations of each held-out scanpath.  The model receives its normal full causal
+prefix at every prediction; no artificial windowing or sequence cropping occurs.
 """
-
 from __future__ import annotations
 
 import argparse
@@ -27,63 +20,48 @@ import torch
 from tqdm.auto import tqdm
 
 from attribution.behavioral_responsibilities import checkpoint_model
-from attribution.linguistic_group_permutation import (
-    DATA_DIR, log_likelihood, make_permutation_maps, permuted_inputs,
-)
+from attribution.linguistic_group_permutation import DATA_DIR, log_likelihood, make_permutation_maps, permuted_inputs
 from spatio_temporal_reading.data.data import MecoDataset
 from spatio_temporal_reading.data.dataLM import MecoDatasetLM
 
 
-def contexts_at_targets(inputs: torch.Tensor, targets: np.ndarray, length: int) -> torch.Tensor:
-    """Return L-input contexts ending at each target's preceding fixation."""
-    return torch.stack([inputs[target - length + 1:target + 1] for target in targets])
-
-
-def final_step_outputs(outputs: tuple[torch.Tensor, ...]) -> tuple[torch.Tensor, ...]:
-    """Keep only the distribution predicting the target at each context end."""
-    return tuple(value[:, -1] for value in outputs)
-
-
-def bootstrap(scanpath_results: pd.DataFrame, replicates: int, seed: int, progress: bool) -> pd.DataFrame:
-    """Nested paired bootstrap over scanpaths and linguistic permutations."""
-    lengths = np.sort(scanpath_results.context_length.unique())
-    permutations = np.sort(scanpath_results.permutation.unique())
-    paths = scanpath_results[["text", "reader"]].drop_duplicates().reset_index(drop=True)
-    lookup = scanpath_results.set_index(["permutation", "text", "reader", "context_length"])
+def bootstrap(results: pd.DataFrame, replicates: int, seed: int, progress: bool) -> pd.DataFrame:
+    """Paired nested bootstrap over held-out scanpaths and permutation IDs."""
+    lengths = np.sort(results.context_length.unique())
+    permutations = np.sort(results.permutation.unique())
+    paths = results[["text", "reader"]].drop_duplicates().reset_index(drop=True)
+    lookup = results.set_index(["permutation", "text", "reader", "context_length"])
     rng = np.random.default_rng(seed)
     draws = []
     for replicate in tqdm(range(replicates), desc="Paired nested bootstrap", disable=not progress):
         sampled_paths = paths.iloc[rng.integers(len(paths), size=len(paths))]
         sampled_permutations = rng.choice(permutations, size=len(permutations), replace=True)
-        by_length = {}
+        estimates = {}
         for length in lengths:
-            values = []
+            by_permutation = []
             for permutation in sampled_permutations:
-                selected = [lookup.loc[(permutation, row.text, row.reader, length)] for row in sampled_paths.itertuples(index=False)]
-                values.append(sum(float(row.delta_log_likelihood) for row in selected) / sum(int(row.n_events) for row in selected))
-            by_length[int(length)] = float(np.mean(values))
-            draws.append({"replicate": replicate, "context_length": int(length), "likelihood_benefit_nats_per_target": by_length[int(length)]})
+                rows = [lookup.loc[(permutation, path.text, path.reader, length)] for path in sampled_paths.itertuples(index=False)]
+                by_permutation.append(sum(float(row.delta_log_likelihood) for row in rows) / sum(int(row.n_events) for row in rows))
+            estimates[int(length)] = float(np.mean(by_permutation))
+            draws.append({"replicate": replicate, "context_length": int(length), "kind": "estimate", "value": estimates[int(length)]})
         for low, high in zip(lengths[:-1], lengths[1:]):
-            draws.append({"replicate": replicate, "context_length": f"{low}->{high}",
-                          "likelihood_benefit_nats_per_target": by_length[int(high)] - by_length[int(low)],
-                          "kind": "adjacent_difference"})
-        draws.append({"replicate": replicate, "context_length": f"{lengths[0]}->{lengths[-1]}",
-                      "likelihood_benefit_nats_per_target": by_length[int(lengths[-1])] - by_length[int(lengths[0])],
-                      "kind": "endpoint_difference"})
+            draws.append({"replicate": replicate, "context_length": f"{low}->{high}", "kind": "adjacent_difference", "value": estimates[int(high)] - estimates[int(low)]})
+        draws.append({"replicate": replicate, "context_length": f"{lengths[0]}->{lengths[-1]}", "kind": "endpoint_difference", "value": estimates[int(lengths[-1])] - estimates[int(lengths[0])]})
     return pd.DataFrame(draws)
 
 
-def make_plot(summary: pd.DataFrame, output: Path) -> None:
-    figure, axis = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
-    axis.errorbar(summary.context_length, summary.estimate,
-                  yerr=np.vstack([summary.estimate - summary.ci_lower, summary.ci_upper - summary.estimate]),
-                  marker="o", capsize=3, color="#4C78A8")
-    axis.axhline(0, color="black", linewidth=.8)
-    axis.set(xlabel="Available preceding fixations (L)", ylabel="Original − permuted likelihood\n(nats per predicted fixation)",
-             title="Grouped linguistic-feature reliance by context length")
-    axis.set_xticks(summary.context_length)
-    figure.savefig(output / "context_length_linguistic_permutation.png", dpi=220)
-    plt.close(figure)
+def save_plot(summary: pd.DataFrame, output: Path) -> None:
+    fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
+    ax.errorbar(summary.context_length, summary.estimate,
+                yerr=np.vstack([summary.estimate - summary.ci_lower, summary.ci_upper - summary.estimate]),
+                marker="o", capsize=3, color="#4C78A8")
+    ax.axhline(0, color="black", linewidth=.8)
+    ax.set(xlabel="Scanpath prefix length (predicted fixations)",
+           ylabel="Original − permuted likelihood\n(nats per predicted fixation)",
+           title="Grouped linguistic-feature benefit over scanpath prefixes")
+    ax.set_xticks(summary.context_length)
+    fig.savefig(output / "context_length_linguistic_permutation.png", dpi=220)
+    plt.close(fig)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -103,7 +81,7 @@ def main(args: argparse.Namespace) -> None:
     test_texts = sorted({int(item[0]) for item in dataset.items})
     maps, diagnostics = make_permutation_maps(dataset.meco_df, test_texts, args.permutations, args.seed, args.length_matching)
     feature_start = 4 + len(dataset.reader_to_idx)
-    rows = []
+    rows, excluded_short = [], 0
 
     with torch.no_grad():
         for item_index, item in enumerate(tqdm(dataset.items, desc="Held-out scanpaths", unit="scanpath", disable=not args.progress)):
@@ -111,71 +89,56 @@ def main(args: argparse.Namespace) -> None:
                 break
             text, reader = item[:2]
             inputs, positions, saccades = dataset[item_index]
-            inputs, positions, saccades = inputs.to(device), positions.to(device), saccades.to(device)
-            targets = np.arange(max(lengths), len(inputs))
-            if args.max_targets is not None:
-                targets = targets[:args.max_targets]
-            if not len(targets):
+            if len(inputs) < max(lengths):
+                excluded_short += 1
                 continue
+            inputs, positions, saccades = inputs.to(device), positions.to(device), saccades.to(device)
             subset = dataset.meco_df[(dataset.meco_df.text == text) & (dataset.meco_df.reader == reader)].copy()
-            permuted = [permuted_inputs(inputs, subset, int(text), mapping, feature_start)[0] for mapping in maps]
-            for length in lengths:
-                baseline_total = 0.0
-                permuted_totals = np.zeros(args.permutations, dtype=float)
-                for start in range(0, len(targets), args.target_batch_size):
-                    batch_targets = targets[start:start + args.target_batch_size]
-                    target_positions, target_saccades = positions[batch_targets], saccades[batch_targets]
-                    original_contexts = contexts_at_targets(inputs, batch_targets, length)
-                    baseline_total += float(log_likelihood(final_step_outputs(model(original_contexts)), target_positions, target_saccades).sum().cpu())
-                    for perm_start in range(0, args.permutations, args.permutation_batch_size):
-                        permutation_ids = range(perm_start, min(args.permutations, perm_start + args.permutation_batch_size))
-                        variants = torch.cat([contexts_at_targets(permuted[permutation], batch_targets, length) for permutation in permutation_ids])
-                        repeats = len(permutation_ids)
-                        ll = log_likelihood(
-                            final_step_outputs(model(variants)),
-                            target_positions.unsqueeze(0).expand(repeats, -1, -1).reshape(-1, 2),
-                            target_saccades.unsqueeze(0).expand(repeats, -1).reshape(-1),
-                        ).reshape(repeats, len(batch_targets)).sum(dim=1).cpu().numpy()
-                        permuted_totals[list(permutation_ids)] += ll
-                for permutation, permuted_total in enumerate(permuted_totals):
-                    rows.append({"permutation": permutation, "text": text, "reader": reader, "context_length": length,
-                                 "n_events": len(targets), "baseline_log_likelihood": baseline_total,
-                                 "permuted_log_likelihood": float(permuted_total),
-                                 "delta_log_likelihood": baseline_total - float(permuted_total),
-                                 "delta_nats_per_target": (baseline_total - float(permuted_total)) / len(targets)})
-
+            baseline_ll = log_likelihood(model(inputs.unsqueeze(0)), positions.unsqueeze(0), saccades.unsqueeze(0)).squeeze(0)
+            for start in range(0, args.permutations, args.permutation_batch_size):
+                permutation_ids = range(start, min(args.permutations, start + args.permutation_batch_size))
+                variants = [permuted_inputs(inputs, subset, int(text), maps[p], feature_start)[0] for p in permutation_ids]
+                variant_ll = log_likelihood(model(torch.stack(variants)), positions.unsqueeze(0).expand(len(variants), -1, -1), saccades.unsqueeze(0).expand(len(variants), -1))
+                for local, permutation in enumerate(permutation_ids):
+                    for length in lengths:
+                        baseline_prefix = baseline_ll[:length].sum()
+                        permuted_prefix = variant_ll[local, :length].sum()
+                        delta = float((baseline_prefix - permuted_prefix).cpu())
+                        rows.append({"permutation": permutation, "text": text, "reader": reader, "context_length": length,
+                                     "n_events": length, "baseline_log_likelihood": float(baseline_prefix.cpu()),
+                                     "permuted_log_likelihood": float(permuted_prefix.cpu()), "delta_log_likelihood": delta,
+                                     "delta_nats_per_target": delta / length})
     results = pd.DataFrame(rows)
     if results.empty:
-        raise RuntimeError("No targets remained. Check context lengths and held-out scanpath lengths.")
-    boot = bootstrap(results, args.bootstrap_replicates, args.seed + 1, args.progress)
-    main_boot = boot[boot.get("kind").isna()].copy()
+        raise RuntimeError("No scanpaths were at least as long as the largest requested prefix.")
+    draws = bootstrap(results, args.bootstrap_replicates, args.seed + 1, args.progress)
     summary_rows = []
     for length in lengths:
-        subset = results.loc[results.context_length.eq(length)]
-        values = main_boot.loc[main_boot.context_length.eq(length), "likelihood_benefit_nats_per_target"]
-        summary_rows.append({"context_length": length,
-                             "estimate": subset.delta_log_likelihood.sum() / subset.n_events.sum(),
+        subset = results[results.context_length.eq(length)]
+        values = draws[(draws.kind == "estimate") & (draws.context_length == length)].value
+        summary_rows.append({"context_length": length, "estimate": subset.delta_log_likelihood.sum() / subset.n_events.sum(),
                              "ci_lower": values.quantile(.025), "ci_upper": values.quantile(.975),
+                             "scanpaths": subset[["text", "reader"]].drop_duplicates().shape[0],
                              "events_per_permutation": int(subset.n_events.sum() / args.permutations)})
     summary = pd.DataFrame(summary_rows)
-    differences = boot[boot.get("kind").notna()].groupby(["kind", "context_length"], as_index=False)["likelihood_benefit_nats_per_target"].agg(
-        estimate="mean", ci_lower=lambda x: x.quantile(.025), ci_upper=lambda x: x.quantile(.975)
-    )
-    estimate_by_length = summary.set_index("context_length").estimate
-    for index, row in differences.iterrows():
-        low, high = map(int, str(row.context_length).split("->"))
-        differences.loc[index, "estimate"] = estimate_by_length[high] - estimate_by_length[low]
+    differences = draws[draws.kind.ne("estimate")].groupby(["kind", "context_length"], as_index=False).value.agg(
+        estimate="mean", ci_lower=lambda x: x.quantile(.025), ci_upper=lambda x: x.quantile(.975))
+    point = summary.set_index("context_length").estimate
+    for i, row in differences.iterrows():
+        low, high = map(int, row.context_length.split("->"))
+        differences.loc[i, "estimate"] = point[high] - point[low]
     results.to_csv(output / "context_length_permutation_scanpath_likelihoods.csv", index=False)
     summary.to_csv(output / "context_length_permutation_summary.csv", index=False)
     differences.to_csv(output / "context_length_permutation_paired_differences.csv", index=False)
-    boot.to_csv(output / "context_length_permutation_bootstrap.csv", index=False)
+    draws.to_csv(output / "context_length_permutation_bootstrap.csv", index=False)
     diagnostics.to_csv(output / "permutation_matching_diagnostics.csv", index=False)
-    make_plot(summary, output)
+    save_plot(summary, output)
     metadata = {"checkpoint": str(Path(checkpoint).resolve()), "device": str(device), "context_lengths": lengths,
                 "permutations": args.permutations, "length_matching": args.length_matching,
-                "targets": "all raw model-evaluable test targets with at least max(L) preceding fixations",
-                "permutation": "joint within-text shuffle of character surprisal, word surprisal, and frequency; masks preserved",
-                "interpretation": "A larger value at longer L can reflect both stronger use of history and more available linguistic inputs."}
+                "scanpaths_excluded_for_short_length": excluded_short,
+                "targets": "first L raw model-evaluable targets; same scanpaths retained at every L",
+                "permutation": "same grouped within-text linguistic-triplet permutation as the original experiment",
+                "model_context": "ordinary full causal prefix; no cropping or masking"}
     (output / "summary.json").write_text(json.dumps(metadata, indent=2))
     print(json.dumps(metadata, indent=2))
 
@@ -188,12 +151,10 @@ if __name__ == "__main__":
     parser.add_argument("--context-lengths", type=int, nargs="+", default=[2, 4, 8, 16, 32])
     parser.add_argument("--permutations", type=int, default=25)
     parser.add_argument("--permutation-batch-size", type=int, default=8)
-    parser.add_argument("--target-batch-size", type=int, default=64)
     parser.add_argument("--length-matching", choices=["exact", "none"], default="exact")
     parser.add_argument("--bootstrap-replicates", type=int, default=1000)
-    parser.add_argument("--seed", type=int, default=20261103)
+    parser.add_argument("--seed", type=int, default=20261029, help="Matches the original permutation experiment.")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--progress", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--max-scanpaths", type=int)
-    parser.add_argument("--max-targets", type=int, help="Debug option: targets per scanpath.")
     main(parser.parse_args())
