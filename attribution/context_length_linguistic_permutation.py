@@ -1,8 +1,9 @@
-"""Original grouped linguistic permutation test over scanpath prefixes.
+"""Grouped linguistic permutation test over natural scanpath-history bands.
 
-For a prefix length L, likelihood is accumulated over the first L predicted
-fixations of each held-out scanpath.  The model receives its normal full causal
+By default, endpoints ``2 4 8 16`` define disjoint prediction-index bands
+``[0,2), [2,4), [4,8), [8,16)``.  The model receives its normal full causal
 prefix at every prediction; no artificial windowing or sequence cropping occurs.
+Use ``--aggregation prefix`` to reproduce cumulative-prefix averages instead.
 """
 from __future__ import annotations
 
@@ -50,16 +51,21 @@ def bootstrap(results: pd.DataFrame, replicates: int, seed: int, progress: bool)
     return pd.DataFrame(draws)
 
 
-def save_plot(summary: pd.DataFrame, output: Path) -> None:
+def save_plot(summary: pd.DataFrame, output: Path, aggregation: str) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.5), constrained_layout=True)
-    ax.errorbar(summary.context_length, summary.estimate,
+    x = summary.x_position
+    ax.errorbar(x, summary.estimate,
                 yerr=np.vstack([summary.estimate - summary.ci_lower, summary.ci_upper - summary.estimate]),
                 marker="o", capsize=3, color="#4C78A8")
     ax.axhline(0, color="black", linewidth=.8)
-    ax.set(xlabel="Scanpath prefix length (predicted fixations)",
+    xlabel = "Scanpath prefix length (predicted fixations)" if aggregation == "prefix" else "Prediction-index band (available history increases left to right)"
+    title = "Grouped linguistic-feature benefit over scanpath prefixes" if aggregation == "prefix" else "Grouped linguistic-feature benefit by scanpath-history band"
+    ax.set(xlabel=xlabel,
            ylabel="Original − permuted likelihood\n(nats per predicted fixation)",
-           title="Grouped linguistic-feature benefit over scanpath prefixes")
-    ax.set_xticks(summary.context_length)
+           title=title)
+    ax.set_xticks(x)
+    if aggregation == "interval":
+        ax.set_xticklabels([f"{int(start)}–{int(end - 1)}" for start, end in zip(summary.interval_start, summary.interval_end)])
     fig.savefig(output / "context_length_linguistic_permutation.png", dpi=220)
     plt.close(fig)
 
@@ -100,14 +106,16 @@ def main(args: argparse.Namespace) -> None:
                 variants = [permuted_inputs(inputs, subset, int(text), maps[p], feature_start)[0] for p in permutation_ids]
                 variant_ll = log_likelihood(model(torch.stack(variants)), positions.unsqueeze(0).expand(len(variants), -1, -1), saccades.unsqueeze(0).expand(len(variants), -1))
                 for local, permutation in enumerate(permutation_ids):
-                    for length in lengths:
-                        baseline_prefix = baseline_ll[:length].sum()
-                        permuted_prefix = variant_ll[local, :length].sum()
-                        delta = float((baseline_prefix - permuted_prefix).cpu())
+                    for index, length in enumerate(lengths):
+                        interval_start = 0 if args.aggregation == "prefix" or index == 0 else lengths[index - 1]
+                        baseline_slice = baseline_ll[interval_start:length].sum()
+                        permuted_slice = variant_ll[local, interval_start:length].sum()
+                        delta = float((baseline_slice - permuted_slice).cpu())
                         rows.append({"permutation": permutation, "text": text, "reader": reader, "context_length": length,
-                                     "n_events": length, "baseline_log_likelihood": float(baseline_prefix.cpu()),
-                                     "permuted_log_likelihood": float(permuted_prefix.cpu()), "delta_log_likelihood": delta,
-                                     "delta_nats_per_target": delta / length})
+                                     "interval_start": interval_start, "interval_end": length,
+                                     "n_events": length - interval_start, "baseline_log_likelihood": float(baseline_slice.cpu()),
+                                     "permuted_log_likelihood": float(permuted_slice.cpu()), "delta_log_likelihood": delta,
+                                     "delta_nats_per_target": delta / (length - interval_start)})
     results = pd.DataFrame(rows)
     if results.empty:
         raise RuntimeError("No scanpaths were at least as long as the largest requested prefix.")
@@ -116,8 +124,11 @@ def main(args: argparse.Namespace) -> None:
     for length in lengths:
         subset = results[results.context_length.eq(length)]
         values = draws[(draws.kind == "estimate") & (draws.context_length == length)].value
+        interval_start = 0 if args.aggregation == "prefix" or lengths.index(length) == 0 else lengths[lengths.index(length) - 1]
         summary_rows.append({"context_length": length, "estimate": subset.delta_log_likelihood.sum() / subset.n_events.sum(),
                              "ci_lower": values.quantile(.025), "ci_upper": values.quantile(.975),
+                             "interval_start": interval_start, "interval_end": length,
+                             "x_position": length if args.aggregation == "prefix" else (interval_start + length) / 2,
                              "scanpaths": subset[["text", "reader"]].drop_duplicates().shape[0],
                              "events_per_permutation": int(subset.n_events.sum() / args.permutations)})
     summary = pd.DataFrame(summary_rows)
@@ -132,11 +143,12 @@ def main(args: argparse.Namespace) -> None:
     differences.to_csv(output / "context_length_permutation_paired_differences.csv", index=False)
     draws.to_csv(output / "context_length_permutation_bootstrap.csv", index=False)
     diagnostics.to_csv(output / "permutation_matching_diagnostics.csv", index=False)
-    save_plot(summary, output)
+    save_plot(summary, output, args.aggregation)
     metadata = {"checkpoint": str(Path(checkpoint).resolve()), "device": str(device), "context_lengths": lengths,
                 "permutations": args.permutations, "length_matching": args.length_matching,
                 "scanpaths_excluded_for_short_length": excluded_short,
-                "targets": "first L raw model-evaluable targets; same scanpaths retained at every L",
+                "aggregation": args.aggregation,
+                "targets": "first L raw model-evaluable targets" if args.aggregation == "prefix" else "disjoint bands [previous endpoint, current endpoint) of raw model-evaluable targets",
                 "permutation": "same grouped within-text linguistic-triplet permutation as the original experiment",
                 "model_context": "ordinary full causal prefix; no cropping or masking"}
     (output / "summary.json").write_text(json.dumps(metadata, indent=2))
@@ -149,6 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint-path", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--context-lengths", type=int, nargs="+", default=[2, 4, 8, 16, 32])
+    parser.add_argument("--aggregation", choices=["interval", "prefix"], default="interval", help="Default: disjoint bands [previous endpoint, endpoint).")
     parser.add_argument("--permutations", type=int, default=25)
     parser.add_argument("--permutation-batch-size", type=int, default=8)
     parser.add_argument("--length-matching", choices=["exact", "none"], default="exact")
